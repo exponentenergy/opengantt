@@ -1,0 +1,61 @@
+{
+  "actions": [],
+  "allow_rename": 1,
+  "autoname": "hash",
+  "creation": "2025-05-17 00:00:00.000000",
+  "doctype": "DocType",
+  "engine": "InnoDB",
+  "fields": [
+    {
+      "fieldname": "template",
+      "fieldtype": "Link",
+      "label": "Template",
+      "options": "OG Template",
+      "reqd": 1
+    },
+    {
+      "fieldname": "active_style",
+      "fieldtype": "Link",
+      "label": "Active Style",
+      "options": "OG Style"
+    },
+    {
+      "fieldname": "source_file",
+      "fieldtype": "Attach",
+      "label": "Source File"
+    },
+    {
+      "fieldname": "parsed_at",
+      "fieldtype": "Datetime",
+      "label": "Parsed At"
+    }
+  ],
+  "index_web_pages_for_search": 1,
+  "links": [],
+  "modified": "2025-05-17 00:00:00.000000",
+  "modified_by": "Administrator",
+  "module": "OpenGantt",
+  "name": "OG Gantt",
+  "naming_rule": "Random",
+  "owner": "Administrator",
+  "permissions": [
+    {
+      "role": "System Manager",
+      "read": 1,
+      "write": 1,
+      "create": 1,
+      "delete": 1
+    },
+    {
+      "role": "OpenGantt User",
+      "read": 1,
+      "write": 1,
+      "create": 1,
+      "delete": 1
+    }
+  ],
+  "sort_field": "modified",
+  "sort_order": "DESC",
+  "states": [],
+  "track_changes": 1
+}

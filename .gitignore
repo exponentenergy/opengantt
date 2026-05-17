@@ -1,0 +1,17 @@
+*.pyc
+__pycache__/
+*.pyo
+*.egg-info/
+dist/
+build/
+node_modules/
+*.log
+.DS_Store
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+*.iml
+opengantt/public/opengantt/
+!opengantt/public/.gitkeep

@@ -1,0 +1,67 @@
+{
+  "actions": [],
+  "allow_rename": 1,
+  "autoname": "hash",
+  "creation": "2025-05-17 00:00:00.000000",
+  "doctype": "DocType",
+  "engine": "InnoDB",
+  "fields": [
+    {
+      "fieldname": "name",
+      "fieldtype": "Data",
+      "label": "Template Name",
+      "reqd": 1
+    },
+    {
+      "fieldname": "description",
+      "fieldtype": "Small Text",
+      "label": "Description"
+    },
+    {
+      "fieldname": "field_map",
+      "fieldtype": "Long Text",
+      "label": "Field Map",
+      "description": "JSON mapping of source columns to canonical fields"
+    },
+    {
+      "fieldname": "grouping",
+      "fieldtype": "Long Text",
+      "label": "Grouping",
+      "description": "JSON ordered list of source column names for grouping"
+    },
+    {
+      "fieldname": "display_columns",
+      "fieldtype": "Long Text",
+      "label": "Display Columns",
+      "description": "JSON list of columns to display on Gantt rows"
+    }
+  ],
+  "index_web_pages_for_search": 1,
+  "links": [],
+  "modified": "2025-05-17 00:00:00.000000",
+  "modified_by": "Administrator",
+  "module": "OpenGantt",
+  "name": "OG Template",
+  "naming_rule": "Random",
+  "owner": "Administrator",
+  "permissions": [
+    {
+      "role": "System Manager",
+      "read": 1,
+      "write": 1,
+      "create": 1,
+      "delete": 1
+    },
+    {
+      "role": "OpenGantt User",
+      "read": 1,
+      "write": 1,
+      "create": 1,
+      "delete": 1
+    }
+  ],
+  "sort_field": "modified",
+  "sort_order": "DESC",
+  "states": [],
+  "track_changes": 1
+}

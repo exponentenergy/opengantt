@@ -1,0 +1,97 @@
+{
+  "actions": [],
+  "allow_rename": 1,
+  "autoname": "hash",
+  "creation": "2025-05-17 00:00:00.000000",
+  "doctype": "DocType",
+  "engine": "InnoDB",
+  "fields": [
+    {
+      "fieldname": "gantt",
+      "fieldtype": "Link",
+      "label": "Gantt",
+      "options": "OG Gantt",
+      "reqd": 1
+    },
+    {
+      "fieldname": "parent_task",
+      "fieldtype": "Link",
+      "label": "Parent Task",
+      "options": "OG Task"
+    },
+    {
+      "fieldname": "task_name",
+      "fieldtype": "Data",
+      "label": "Task Name",
+      "reqd": 1
+    },
+    {
+      "fieldname": "kind",
+      "fieldtype": "Select",
+      "label": "Kind",
+      "options": "group\nleaf",
+      "reqd": 1,
+      "default": "leaf"
+    },
+    {
+      "fieldname": "start_date",
+      "fieldtype": "Date",
+      "label": "Start Date"
+    },
+    {
+      "fieldname": "end_date",
+      "fieldtype": "Date",
+      "label": "End Date"
+    },
+    {
+      "fieldname": "actual_start",
+      "fieldtype": "Date",
+      "label": "Actual Start"
+    },
+    {
+      "fieldname": "actual_end",
+      "fieldtype": "Date",
+      "label": "Actual End"
+    },
+    {
+      "fieldname": "sort_order",
+      "fieldtype": "Int",
+      "label": "Sort Order",
+      "default": 0
+    },
+    {
+      "fieldname": "fields",
+      "fieldtype": "Long Text",
+      "label": "Fields",
+      "description": "JSON blob of additional task properties"
+    }
+  ],
+  "index_web_pages_for_search": 1,
+  "links": [],
+  "modified": "2025-05-17 00:00:00.000000",
+  "modified_by": "Administrator",
+  "module": "OpenGantt",
+  "name": "OG Task",
+  "naming_rule": "Random",
+  "owner": "Administrator",
+  "permissions": [
+    {
+      "role": "System Manager",
+      "read": 1,
+      "write": 1,
+      "create": 1,
+      "delete": 1
+    },
+    {
+      "role": "OpenGantt User",
+      "read": 1,
+      "write": 1,
+      "create": 1,
+      "delete": 1
+    }
+  ],
+  "sort_field": "modified",
+  "sort_order": "DESC",
+  "states": [],
+  "track_changes": 1,
+}
