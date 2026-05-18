@@ -1,7 +1,7 @@
 {
   "actions": [],
   "allow_rename": 1,
-  "autoname": "hash",
+  "autoname": "Prompt",
   "creation": "2025-05-17 00:00:00.000000",
   "doctype": "DocType",
   "engine": "InnoDB",
@@ -36,7 +36,7 @@
   "modified_by": "Administrator",
   "module": "OpenGantt",
   "name": "OG Gantt",
-  "naming_rule": "Random",
+  "naming_rule": "Set by user",
   "owner": "Administrator",
   "permissions": [
     {

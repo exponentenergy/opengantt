@@ -25,6 +25,19 @@ def _samples_dir() -> str:
 
 
 def execute():
+    # If a prior run already seeded all three example Gantts, skip.
+    if frappe.db.exists("OG Gantt", "Watchtower Roadmap (example)") \
+       and frappe.db.exists("OG Gantt", "New Product Plan (example)") \
+       and frappe.db.exists("OG Gantt", "Std Project Plan (example)"):
+        return
+
+    # A previous run may have left orphan records (e.g. hash-named docs from
+    # before autoname was switched to Prompt). Wipe the OpenGantt tables so we
+    # can re-seed cleanly. Safe on first install (tables are empty).
+    for dt in ("OG Task", "OG Share", "OG Gantt", "OG Style", "OG Template"):
+        frappe.db.delete(dt)
+    frappe.db.commit()
+
     _ensure_template(
         name="Program Plan",
         description="Row-per-task program plan (e.g. New Product Plan sheet).",

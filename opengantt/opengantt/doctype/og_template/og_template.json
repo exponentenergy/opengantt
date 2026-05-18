@@ -1,17 +1,11 @@
 {
   "actions": [],
   "allow_rename": 1,
-  "autoname": "hash",
+  "autoname": "Prompt",
   "creation": "2025-05-17 00:00:00.000000",
   "doctype": "DocType",
   "engine": "InnoDB",
   "fields": [
-    {
-      "fieldname": "name",
-      "fieldtype": "Data",
-      "label": "Template Name",
-      "reqd": 1
-    },
     {
       "fieldname": "description",
       "fieldtype": "Small Text",
@@ -38,11 +32,11 @@
   ],
   "index_web_pages_for_search": 1,
   "links": [],
-  "modified": "2025-05-17 00:00:00.000000",
+  "modified": "2025-05-18 00:00:00.000000",
   "modified_by": "Administrator",
   "module": "OpenGantt",
   "name": "OG Template",
-  "naming_rule": "Random",
+  "naming_rule": "Set by user",
   "owner": "Administrator",
   "permissions": [
     {
