@@ -14,7 +14,7 @@ app_license = "mit"
 add_to_apps_screen = [
 	{
 		"name": "opengantt",
-		"logo": "/assets/opengantt/opengantt/logo.svg",
+		"logo": "/assets/opengantt/logo.svg",
 		"title": "OpenGantt",
 		"route": "/opengantt",
 		"has_permission": "opengantt.api.permission.has_app_permission"

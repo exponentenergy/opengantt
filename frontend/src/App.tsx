@@ -85,6 +85,12 @@ function ToastHost() {
   );
 }
 
+// Apply persisted theme as soon as the bundle loads so we don't flash white-then-dark.
+if (typeof document !== 'undefined') {
+  const saved = (typeof localStorage !== 'undefined' && localStorage.getItem('og-theme')) || '';
+  if (saved === 'dark' || saved === 'light') document.documentElement.dataset.theme = saved;
+}
+
 export default function App() {
   // Share-mode: server-rendered template injects window.__OG_SHARE_SNAPSHOT__
   const shareSnapshot = (window as any).__OG_SHARE_SNAPSHOT__;
@@ -130,14 +136,29 @@ export default function App() {
 
   return (
     <div className="app-shell">
-      <div className="topbar">
-        <div className="brand">OpenGantt</div>
-        <div className="nav">
-          <button className={screen==='templates'||screen==='templateEditor'?'active':''} onClick={()=>setScreen('templates')}>Templates</button>
-          <button className={screen==='gantts'||screen==='ganttEditor'?'active':''} onClick={()=>setScreen('gantts')}>Gantts</button>
-          <button className={screen==='settings'?'active':''} onClick={()=>setScreen('settings')}>Settings</button>
+      <aside className="sidenav">
+        <div className="sidenav-brand">
+          <img src="/assets/opengantt/logo.svg" alt="" width="28" height="28" />
+          <span>OpenGantt</span>
         </div>
-      </div>
+        <nav className="sidenav-links">
+          <button className={screen==='templates'||screen==='templateEditor'?'active':''} onClick={()=>setScreen('templates')}>
+            <span className="icon">▤</span> Templates
+          </button>
+          <button className={screen==='gantts'||screen==='ganttEditor'?'active':''} onClick={()=>{setOpenGantt(null);setScreen('gantts');}}>
+            <span className="icon">▦</span> Gantts
+          </button>
+        </nav>
+        <div className="sidenav-foot">
+          <button className={screen==='settings'?'active':''} onClick={()=>setScreen('settings')}>
+            <span className="icon">⚙</span> Settings
+          </button>
+          <div className="sidenav-user">
+            <div className="avatar">{(user||'?').slice(0,1).toUpperCase()}</div>
+            <span title={user}>{user}</span>
+          </div>
+        </div>
+      </aside>
       <div className="page-wrap">
         {screen==='templates' && <TemplatesScreen onEdit={(n)=>{setEditTemplate(n);setScreen('templateEditor');}} />}
         {screen==='templateEditor' && <TemplateEditorScreen name={editTemplate} onBack={()=>setScreen('templates')} />}
@@ -155,6 +176,8 @@ function TemplatesScreen({ onEdit }: { onEdit: (n: string) => void }) {
   const [showNew, setShowNew] = useState(false);
   const [newName, setNewName] = useState('');
   const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState('');
+  const [sort, setSort] = useState<'name-asc'|'name-desc'|'newest'|'oldest'>('name-asc');
   const refresh = () => { setLoading(true); frappeApi.list('OG Template').then((r: any) => { setItems(r || []); setLoading(false); }); };
   useEffect(() => { refresh(); }, []);
   const create = async () => {
@@ -163,21 +186,48 @@ function TemplatesScreen({ onEdit }: { onEdit: (n: string) => void }) {
     catch (e: any) { toast(e?.message || 'Failed to create template', 'error'); return; }
     setNewName(''); setShowNew(false); refresh();
   };
+  const filtered = useMemo(() => {
+    const f = filter.trim().toLowerCase();
+    let arr = !f ? items : items.filter(t => t.name.toLowerCase().includes(f) || (t.description||'').toLowerCase().includes(f));
+    arr = [...arr].sort((a, b) => {
+      if (sort === 'name-asc') return a.name.localeCompare(b.name);
+      if (sort === 'name-desc') return b.name.localeCompare(a.name);
+      const am = (a as any).modified || (a as any).creation || '';
+      const bm = (b as any).modified || (b as any).creation || '';
+      return sort === 'newest' ? bm.localeCompare(am) : am.localeCompare(bm);
+    });
+    return arr;
+  }, [items, filter, sort]);
   return (
     <div className="page">
-      <div className="page-head"><div><h1>My Templates</h1><p>Describe the shape of your input files so they parse into Gantts.</p></div><button className="btn btn-primary" onClick={()=>setShowNew(true)}>New Template</button></div>
+      <div className="page-head">
+        <div><h1>My Templates</h1><p>Describe the shape of your input files so they parse into Gantts.</p></div>
+        <button className="btn btn-primary" onClick={()=>setShowNew(true)}>+ New Template</button>
+      </div>
+      <div className="filters-bar">
+        <input className="filter-input" placeholder="Search templates by name or description…" value={filter} onChange={e=>setFilter(e.target.value)} />
+        <select className="filter-select" value={sort} onChange={e=>setSort(e.target.value as any)}>
+          <option value="name-asc">Name A→Z</option>
+          <option value="name-desc">Name Z→A</option>
+          <option value="newest">Newest first</option>
+          <option value="oldest">Oldest first</option>
+        </select>
+        <span className="filter-count">{filtered.length} of {items.length}</span>
+      </div>
       {showNew && (
         <div className="card" style={{ display:'flex', gap:8 }}>
-          <input placeholder="Template name" value={newName} onChange={e=>setNewName(e.target.value)} autoFocus />
+          <input placeholder="Template name" value={newName} onChange={e=>setNewName(e.target.value)} autoFocus onKeyDown={e=>{if(e.key==='Enter')create();}} />
           <button className="btn btn-primary" onClick={create}>Save</button>
           <button className="btn btn-ghost" onClick={()=>setShowNew(false)}>Cancel</button>
         </div>
       )}
       {loading ? <div className="empty-state"><span>Loading templates…</span></div> :
         <div className="list">
-          {items.map(t => (
+          {filtered.map(t => (
             <div key={t.name} className="row">
-              <div><strong>{t.name}</strong><span>{t.description || 'No description'}</span></div>
+              <div onClick={()=>onEdit(t.name)} style={{cursor:'pointer',flex:1,minWidth:0}}>
+                <strong>{t.name}</strong><span>{t.description || 'No description'}</span>
+              </div>
               <div style={{display:'flex',gap:8}}>
                 <button className="btn btn-ghost" onClick={()=>onEdit(t.name)}>Edit</button>
                 <button className="btn btn-danger" onClick={async ()=>{
@@ -188,6 +238,7 @@ function TemplatesScreen({ onEdit }: { onEdit: (n: string) => void }) {
               </div>
             </div>
           ))}
+          {filtered.length===0 && items.length>0 && <div className="empty-state"><span>No templates match "{filter}".</span></div>}
           {items.length===0 && <div className="empty-state"><strong>No templates yet</strong><span>Create one to describe your spreadsheet's columns.</span></div>}
         </div>
       }
@@ -429,8 +480,25 @@ function GanttsScreen({ onOpen }: { onOpen: (n: string) => void }) {
   const [preview, setPreview] = useState<ParsedTask[] | null>(null);
   const [newName, setNewName] = useState('');
   const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState('');
+  const [templateFilter, setTemplateFilter] = useState('');
+  const [sort, setSort] = useState<'newest'|'oldest'|'name-asc'|'name-desc'>('newest');
   const refresh = () => { setLoading(true); frappeApi.list('OG Gantt').then((r: any) => { setItems(r||[]); setLoading(false); }); };
   useEffect(() => { refresh(); frappeApi.list('OG Template').then((r: any)=>setTemplates(r||[])); }, []);
+  const filteredItems = useMemo(() => {
+    const f = filter.trim().toLowerCase();
+    let arr = items;
+    if (templateFilter) arr = arr.filter(g => g.template === templateFilter);
+    if (f) arr = arr.filter(g => g.name.toLowerCase().includes(f) || (g.template||'').toLowerCase().includes(f));
+    arr = [...arr].sort((a, b) => {
+      if (sort === 'name-asc') return a.name.localeCompare(b.name);
+      if (sort === 'name-desc') return b.name.localeCompare(a.name);
+      const am = a.parsed_at || (a as any).modified || '';
+      const bm = b.parsed_at || (b as any).modified || '';
+      return sort === 'newest' ? bm.localeCompare(am) : am.localeCompare(bm);
+    });
+    return arr;
+  }, [items, filter, templateFilter, sort]);
   const onUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0]; if (!f) return;
     const reader = new FileReader();
@@ -463,7 +531,24 @@ function GanttsScreen({ onOpen }: { onOpen: (n: string) => void }) {
   };
   return (
     <div className="page">
-      <div className="page-head"><div><h1>My Gantts</h1><p>Upload spreadsheets against templates to generate Gantts.</p></div><button className="btn btn-primary" onClick={()=>setShowNew(true)} disabled={templates.length===0}>New Gantt</button></div>
+      <div className="page-head">
+        <div><h1>My Gantts</h1><p>Upload spreadsheets against templates to generate Gantts.</p></div>
+        <button className="btn btn-primary" onClick={()=>setShowNew(true)} disabled={templates.length===0}>+ New Gantt</button>
+      </div>
+      <div className="filters-bar">
+        <input className="filter-input" placeholder="Search Gantts…" value={filter} onChange={e=>setFilter(e.target.value)} />
+        <select className="filter-select" value={templateFilter} onChange={e=>setTemplateFilter(e.target.value)}>
+          <option value="">All templates</option>
+          {templates.map(t => <option key={t.name} value={t.name}>{t.name}</option>)}
+        </select>
+        <select className="filter-select" value={sort} onChange={e=>setSort(e.target.value as any)}>
+          <option value="newest">Newest first</option>
+          <option value="oldest">Oldest first</option>
+          <option value="name-asc">Name A→Z</option>
+          <option value="name-desc">Name Z→A</option>
+        </select>
+        <span className="filter-count">{filteredItems.length} of {items.length}</span>
+      </div>
       {templates.length===0 && <div className="empty-state"><strong>You need a template first</strong><span>Create one on the Templates screen, then return here.</span></div>}
       {showNew && (
         <div className="card" style={{display:'grid',gap:12}}>
@@ -488,9 +573,11 @@ function GanttsScreen({ onOpen }: { onOpen: (n: string) => void }) {
       )}
       {loading ? <div className="empty-state"><span>Loading Gantts…</span></div> :
         <div className="list">
-          {items.map(g => (
+          {filteredItems.map(g => (
             <div key={g.name} className="row">
-              <div><strong>{g.name}</strong><span>{g.template}{g.parsed_at?` · parsed ${new Date(g.parsed_at).toLocaleDateString()}`:''}</span></div>
+              <div onClick={()=>onOpen(g.name)} style={{cursor:'pointer',flex:1,minWidth:0}}>
+                <strong>{g.name}</strong><span>{g.template}{g.parsed_at?` · parsed ${new Date(g.parsed_at).toLocaleDateString()}`:''}</span>
+              </div>
               <div style={{display:'flex',gap:8}}>
                 <button className="btn btn-primary" onClick={()=>onOpen(g.name)}>Open</button>
                 <button className="btn btn-danger" onClick={async ()=>{
@@ -501,6 +588,7 @@ function GanttsScreen({ onOpen }: { onOpen: (n: string) => void }) {
               </div>
             </div>
           ))}
+          {filteredItems.length===0 && items.length>0 && <div className="empty-state"><span>No Gantts match the current filter.</span></div>}
           {items.length===0 && !loading && <div className="empty-state"><strong>No Gantts yet</strong><span>Upload a file against a template to create one.</span></div>}
         </div>
       }
@@ -645,13 +733,36 @@ function GanttEditorScreen({ name, onBack }: { name: string | null; onBack: () =
       toast('Share link created');
     } catch (e:any) { toast(e?.message || 'Share failed', 'error'); }
   };
-  const exportHtml = () => {
+  const exportHtml = async () => {
     if (!gantt) return;
-    const css = Array.from(document.styleSheets).flatMap(s => { try { return Array.from(s.cssRules).map(r=>r.cssText); } catch { return []; } }).join('\n');
-    const payload = { tasks, template, style: styleCfg, displayColumns };
-    const html = `<!doctype html><html><head><meta charset="utf-8"><title>${gantt.name}</title><style>${css}</style></head><body><div id="root"></div><script>window.__OG_SHARE_SNAPSHOT__=${JSON.stringify(payload)};</script><script src="/assets/opengantt/opengantt/main.js"></script></body></html>`;
-    const blob = new Blob([html], { type: 'text/html' });
-    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `${gantt.name}.html`; a.click();
+    try {
+      // Fetch the JS + CSS so the saved file works without any server.
+      const [jsRes, cssRes] = await Promise.all([
+        fetch('/assets/opengantt/opengantt/main.js'),
+        fetch('/assets/opengantt/opengantt/main.css'),
+      ]);
+      if (!jsRes.ok || !cssRes.ok) throw new Error('Couldn’t load bundle for inlining');
+      const [js, css] = await Promise.all([jsRes.text(), cssRes.text()]);
+      const payload = { tasks, template, style: styleCfg, displayColumns };
+      const payloadJson = JSON.stringify(payload).replace(/</g, '\\u003c');
+      const safeJs = js.replace(/<\/script>/gi, '<\\/script>');
+      const html =
+        `<!doctype html><html><head><meta charset="utf-8">` +
+        `<title>${(gantt.name || 'OpenGantt Export').replace(/[<>&]/g, c => ({ '<':'&lt;','>':'&gt;','&':'&amp;' }[c]!))}</title>` +
+        `<style>${css}</style></head><body><div id="root"></div>` +
+        `<script>window.__OG_SHARE_SNAPSHOT__=${payloadJson};</script>` +
+        `<script>${safeJs}</script></body></html>`;
+      const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `${gantt.name}.html`;
+      document.body.appendChild(a);
+      a.click();
+      requestAnimationFrame(() => { URL.revokeObjectURL(a.href); a.remove(); });
+      toast(`Downloaded ${gantt.name}.html`);
+    } catch (e: any) {
+      toast(e?.message || 'Export failed', 'error');
+    }
   };
   const reimport = async () => {
     if (!gantt) return;
@@ -1031,11 +1142,67 @@ function NewTaskPanel({ gantt, allTasks, defaultParent, displayColumns, onClose,
 }
 
 function SettingsScreen({ user }: { user: string }) {
+  const [theme, setTheme] = useState<'light'|'dark'>(() => (localStorage.getItem('og-theme') as any) || 'light');
+  const [counts, setCounts] = useState<{templates:number; gantts:number; styles:number; tasks:number} | null>(null);
+  useEffect(() => { document.documentElement.dataset.theme = theme; localStorage.setItem('og-theme', theme); }, [theme]);
+  useEffect(() => {
+    Promise.all([
+      frappeApi.list('OG Template'), frappeApi.list('OG Gantt'),
+      frappeApi.list('OG Style'),    frappeApi.list('OG Task'),
+    ]).then(([t,g,s,k]: any[]) => setCounts({ templates:(t||[]).length, gantts:(g||[]).length, styles:(s||[]).length, tasks:(k||[]).length })).catch(()=>{});
+  }, []);
+
   return (
     <div className="page">
-      <div className="page-head"><h1>Settings</h1></div>
-      <div className="card"><strong>Signed in as</strong><span>{user}</span></div>
-      <div className="card"><button className="btn btn-ghost" onClick={()=>{window.location.href='/app';}}>Go to Frappe Desk</button></div>
+      <div className="page-head"><div><h1>Settings</h1><p>Preferences and account info.</p></div></div>
+
+      <div className="card" style={{display:'grid',gap:14}}>
+        <div style={{display:'flex',alignItems:'center',gap:14}}>
+          <div className="avatar lg">{(user||'?').slice(0,1).toUpperCase()}</div>
+          <div style={{display:'flex',flexDirection:'column'}}>
+            <strong style={{fontSize:15}}>{user}</strong>
+            <span style={{color:'var(--text-muted)',fontSize:12}}>Signed in</span>
+          </div>
+          <div style={{marginLeft:'auto',display:'flex',gap:8}}>
+            <button className="btn btn-ghost" onClick={()=>{window.location.href='/app';}}>Frappe Desk</button>
+            <button className="btn btn-danger" onClick={()=>{window.location.href='/api/method/logout';}}>Sign out</button>
+          </div>
+        </div>
+      </div>
+
+      <div className="card" style={{display:'grid',gap:12}}>
+        <h3 style={{margin:0}}>Appearance</h3>
+        <p style={{margin:0,color:'var(--text-muted)',fontSize:12}}>Affects the entire app. Individual Gantts can still override via their style.</p>
+        <div style={{display:'flex',gap:8}}>
+          <button className={`theme-tile ${theme==='light'?'active':''}`} onClick={()=>setTheme('light')}>
+            <span className="swatch light"></span><span>Light</span>
+          </button>
+          <button className={`theme-tile ${theme==='dark'?'active':''}`} onClick={()=>setTheme('dark')}>
+            <span className="swatch dark"></span><span>Dark</span>
+          </button>
+        </div>
+      </div>
+
+      <div className="card" style={{display:'grid',gap:12}}>
+        <h3 style={{margin:0}}>Your workspace</h3>
+        {counts ? (
+          <div className="stats-grid">
+            <div><strong>{counts.templates}</strong><span>Templates</span></div>
+            <div><strong>{counts.gantts}</strong><span>Gantts</span></div>
+            <div><strong>{counts.styles}</strong><span>Styles</span></div>
+            <div><strong>{counts.tasks}</strong><span>Tasks</span></div>
+          </div>
+        ) : <span style={{color:'var(--text-muted)',fontSize:12}}>Loading…</span>}
+      </div>
+
+      <div className="card" style={{display:'grid',gap:12}}>
+        <h3 style={{margin:0}}>About</h3>
+        <div className="kv">
+          <span>App</span><span>OpenGantt</span>
+          <span>Version</span><span>0.1.0</span>
+          <span>Source</span><a href="https://github.com/askysh/opengantt" target="_blank" rel="noreferrer">github.com/askysh/opengantt</a>
+        </div>
+      </div>
     </div>
   );
 }
