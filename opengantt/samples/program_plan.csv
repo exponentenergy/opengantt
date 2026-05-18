@@ -1,0 +1,49 @@
+SN,Program Step,Program Stage,Milestone,Status,Start Date,End Date,Notes,Attachment,Data pack Owner,Data pack reviewer,Data pack
+1.0,Business Case and Program kick-off,POC,Yes,Open,,,,,"PM, Business","Zion, Business, FIN","Product Cost and selling price, volume projections, Launch Timeframe based on preliminary program plan, Product requirements, Product Development budget and team member identification with role mapping"
+2.0,Product Definition and Specifications,POC,-,Done,,,,,"PM, SYS","ENG, AE, PQ, Business, Legal, Zion","Product flyer and attributes with industry benchmarking, ID inputs and UI/UX inputs, information about competitors, Product specs, I/O OEM Requirements, internal requirements, interactions across products with compatibility matrix, applicable regulations, warranty document, warranty targets, reliability targets, life target, Program stage level quality targets, Intellectual Property check (opportunity and infringement risk check)"
+3.0,Architecture,POC,-,Ongoing,,,,,"SYS, ENG","ENG, SYS, VCD, PE, SCM, AE, PQ","Block diagram, block specs, boundary diagram"
+4.0,AFMEA,POC,-,,,,,,SYS,"PM, ENG, PQ, DVT, AE","P-diagram, Risk register with risk status, risk action, design bottlenecks and program risks"
+5.0,POC build and Firmware,POC,-,Stuck,,,,,ENG,SYS,"HEX / BIN / OUT file, SOP (Field, factory), FW FMEA risk register, Functional testing"
+6.0,Proof of Concept Gate review,POC,Yes,,,,,,"ENG, PE, VCD","PM, SYS, PQ, DVT, Legal","Eng spec, decision matrix, simulations, virtual analysis and validation reports, NNN Document (New design, New Process, New MFG strategy / Vendor), ECR initiation"
+7.0,DFMEA,MK1,-,,,,,,ENG,"SYS, PQ, DVT, VCD, AE","P-diagram, Risk register with RPN, risk status, risk action, legacy or inherited risks, failure modes, Design CTQs, risk to CTQ mapping"
+8.0,EVT List,MK1,-,,,,,,ENG,"SYS, PQ","Test cases, test plan, DUT requirements, rig BOM and datapack, test standards"
+9.0,DVT List,MK1,-,Done,,,,,"DVT, PQ","PM, ENG, SYS","Test cases, test plan, DUT requirements, rig BOM and datapack, test standards, DVT budget, fixtures, Mapping of test cases to all specs and known bugs / Failure Modes (product attributes, integration and engineering specs), Reliability testing requirements (PQ)"
+10.0,Design Release 1 (MK1 data pack),MK1,-,,,,,,ENG,"PQ, PE, AE, VCD, ID","Part Drawings, Assembly Drawings and CTQ, Schematic Layout, Gerber, BOM, AICTQ, derating analysis, tolerance stack / simulation, summary report of MK1 design"
+11.0,Sample part procurement for MK1 Build,MK1,-,Cancelled,,,,,"VCD, SCM",ENG,"Make/ buy decision, MK1 procurement strategy with deviation list, SOR, Vendor Selection, Dev Cost, Scope and Duration Signoff"
+12.0,MK1 Builds by Process Engineering,MK1,Yes,,,,,,PE,"ENG, PQ","Critical Process trial report, IQC Report, IPQC report, Proto EOL Report, DFA, Process Flow Diagram"
+13.0,Should Costing and Quotation Alignment,MK1,-,,,,,,SCM,"PQ, ENG","Vendor selection, Should cost, quotation against volumes, target cost vs feature analysis, lead time, MOQ, Glide path for Optimal Cost"
+14.0,MFG Strategy and DFX,MK1,-,,,,,,"AE, VCD, SCM, PE, Service, PQ, SYS",ENG,"Master DFX sheet with decision log and rationale; DFX includes design for - MFG, Assembly, Service, Logistics, Testing, Safety"
+15.0,EOL Scope Definition,MK1,-,,,,,,ENG,"PQ, SYS",EOL Spec definition and Report format
+16.0,Engineering Validation Testing and Functional Design Validation Testing,MK1,Yes,,,,,,"ENG, DVT","SYS, PQ","EVT Report with Unit testing, functional testing, system testing, field testing, Phase 1 DVT report for product (performance) and component (performance, durability and reliability) testing"
+17.0,Homologation,MK1,Yes,,,,,,PQ,"PM, ENG","Homologation documentation Certification Scope, DuT Requirement, Test Plan"
+18.0,MK1 Gate Review,MK1,Yes,,,,,,Module Lead,"PQ, Function heads",Gate review data pack (all MK1 steps)
+19.0,PFMEA,MK2,-,,,,,,PE,"SYS, PQ, DVT, VCD","P-diagram, Risk register with RPN, risk status, risk action, Process trial list"
+20.0,Assembly instructions and Process Control plan,MK2,-,,,,,,PE,"PQ, MFG, IPQC, EOL, SYS, ENG","MBOM, Assembly instructions, IPQC and EOL Flow and work content, Process control chart, poka-yoke, Service line instructions"
+21.0,"Equipment, Fixtures and Gauges for Assembly, IPQC and EOL",MK2,-,Done,,,,,PE,"PQ, MFG, IPQC, EOL, VCD","Equipment, gauges and fixtures design, EFMEA, Maintainance checklist and plan"
+22.0,Production EOL Set up and Dry Run,MK2,-,,,,,,PE,"PQ, PE",Production EOL Report
+23.0,Design Release 2 (MK2 data pack),MK2,-,,,,,,ENG,"PQ, DVT, PE, AE, VCD, SCM","Drawing, Schematic Layout, Gerber, BOM, AICTQ, derating analysis, tolerance stack / simulation, Preliminary tooling release (based on requirement), Integration CTQs,  Change Log with Homologation Impact"
+24.0,Sample part procurement for MK2 Build,MK2,-,,,,,,"VCD, SCM","PQ, IQC","PDI reports, Tooling Release"
+25.0,MK2 Builds by Process Engineering with fixture trials,MK2,Yes,,,,,,PE,"ENG, PQ","Process Trial Report, IQC Report, IPQC report, Porduction EOL Report, Fixture validation report, Updated process flow diagram, build and test feedback from contract MFG"
+26.0,Gauges for IQC / Vendor PDI,MK2,-,,,,,,VCD,"ENG, PQ, IQC, PE, SCM","Gague design, method of measurement"
+27.0,"Line, Station and Manpower plan",MK2,-,Done,,,,,PE,"MFG, Service","Floor plan, Manpower requirements and loading analysis (in relation to existing products in MFG), Service line and manpower plan"
+28.0,"QAP, IQC Definition",MK2,-,,,,,,VCD,"ENG, PQ, IQC, PE, SCM","QAP, IQC work instructions"
+29.0,Production FW,MK2,-,Done,,,,,ENG,"ENG, PQ","HEX / BIN / OUT file, SOP (Field, factory), Eng Specs, Test Report, Flashing SOP"
+30.0,Design Validation Testing,MK2,Yes,,,,,,DVT,"ENG, SYS, PQ","Tooled-up part DVT Report with system testing, field testing, reliability assessment under Phase 2 DVT report for product (performance, durability and reliability) and component (performance, durability and reliability) testing"
+31.0, MK2 Gate Review,MK2,Yes,,,,,,Module Lead,"PQ, Function heads",Gate review data pack (all MK2 steps)
+32.0,Design Release 3 (MK3 data pack),MK3,-,,,,,,ENG,"PM, ID, SYS, PQ, PE, AE, VCD, SCM, Zion","ECR initiation, BOM [ERP upload], Drawings, CTQ, Data sheets, Series Procurement release for limited units (defined for LV SOP)"
+33.0,Procurement and PPAP with QAP Sign-off,MK3,-,,,,,,"VCD, SCM","PQ, ENG","Tooled and Non-tooled parts PPAP audit report, Inventory Schedule, PDI reports, QAP, General Purchase Agreement (buy-parts)"
+34.0,Pre-Production (Low volume SOP),MK3,Yes,,,,,,MFG,"PQ, PE, IPQC","Inventory Plan, Build plan, QC Report, Validation Report for MFG Line"
+35.0,Production Validation and Clearance,MK3,-,,,,,,"DVT, PQ","All ECN Stakeholders, Legal","PVT Report with system testing, field testing, ECR approval, Repeat of Intellectual Property check clearance by Legal"
+36.0,Tool corrections and re-trial,MK3,-,,,,,,VCD,"PQ, ENG, SCM, PE","Tool modifications based on revised drawings, if any"
+37.0,Pre-Production Bug Review,MK3,-,,,,,,PQ,"PM, ENG, SYS","Bug descreption, occurance, context and circumstances"
+38.0,"Specification, Design and Validation reconciliation",MK3,-,,,,,,"SYS, PM, ENG","PQ, DVT","Updated specifications with change log, Updated design datapack to address all non-negotiable spec failures, incl. reliability targets, Homologation Impact"
+39.0,Design Release 4 (Production data pack),MK3,-,,,,,,"ENG, PE, VCD","SYS, PQ, DVT, AE, SCM","Drawing, Schematic Layout, Gerber, BOM, AI, XCTQs,  Change Log with Homologation Impact, ECN Release"
+40.0,MK3 Gate Review,MK3,Yes,Done,,,,,Module Lead,"PQ, Function Heads",Gate review data pack (all MK3 steps)
+41.0,Start of Production (High volume SOP),Sustenance,-,Done,,,,,MFG,"PQ, PE, IPQC",QC Report
+42.0,Documentation Closure and Acceptance into Sustenance ENG,Sustenance,Yes,,,,,,"ENG, VCD, PE","SYS, PQ, PM, Service","All the above, Service SOP, Maintenance SOP, User manual etc, Field Bugs, lessons learnt, VAVE, re-sourcing parts, cost reduction, Tool life monitoring and re-tooling, Conformance of Performance in Production"
+,,Stage,Progress,,,,,,,,
+,,POC,0.1666666667,,,,,,,,
+,,MK1,0.08333333333,,,,,,,,
+,,MK2,0.2307692308,,,,,,,,
+,,MK3,0.1111111111,,,,,,,,
+,,Sustenance,0.5,,,,,,,,

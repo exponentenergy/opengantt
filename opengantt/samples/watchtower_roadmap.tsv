@@ -1,0 +1,45 @@
+																													
+s	Module Name	Q3 FY2025			Q4 FY2025			Q1 FY2026			Q2 FY2026			Q3 FY2026			Q4 FY2026			Q1 FY2027			Q2 FY2027			Q3 FY2027			
+		Oct 24	Nov 24	Dec 24	Jan 25	Feb 25	Mar 25	Apr 25	May 25	Jun 25	Jul 25	Aug 25	Sep 25	Oct 25	Nov 25	Dec 25	Jan 26	Feb 26	Mar 26	Apr 26	May 26	Jun 26	Jul 26	Aug 26	Sep 26	Oct 26	Nov 26	Dec 26	Legends
+1	Accounts		Scope Discovery	Scope Discovery	Development	Development	UAT	Migration	Migration	Migration	Migration	Migration	Migration	Migration	Migration	Migration	Migration	Migration	Migration	Migration	Migration	Go-Live	Go-Live						Scope Discovery
+	Procurement		Scope Discovery	Scope Discovery	Development	Development	UAT	Migration	Migration	Migration	Migration	Migration	Migration	Migration	Migration	Migration	Migration	Migration	Go-Live										Developement
+	Revenue and Invoicing		Scope Discovery	Scope Discovery	Development	Development	UAT	Migration	Migration	Migration	Migration	Migration	Migration	Migration	Migration	Migration	Migration	Migration	Go-Live										UAT
+	Inventory		Scope Discovery	Scope Discovery	Development	Development	Development	Migration	Go-Live	Go-Live								Increment - Data Import											Migration
+	Manufacturing Operations		Scope Discovery	Scope Discovery	Development	Development	Development	UAT	Migration	Migration	Migration	Migration	Migration	Migration	Migration	Migration	Migration	Migration	Migration	Go-Live	Go-Live								Sustenance
+	HR - Expense Claims						Scope Discovery	Migration	Go-Live																				Increment - Bug
+	Bug Report v1.0									Scope Discovery	Scope Discovery	UAT	Migration	Go-Live															Increment - Feature
+2	Exponent CRM							Scope Discovery	Scope Discovery	Scope Discovery	Development	UAT	UAT	Migration	Go-Live	Increment - Feature	Increment - Feature	Increment - Feature											Increment - Data Import
+	Product Gallery												Scope Discovery	Development	Development	UAT	UAT	UAT	Migration	Go-Live									
+	Exponent Payment Management													Scope Discovery	Development	Development	Migration	Go-Live	Go-Live										
+	Bug Management												Scope Discovery	Scope Discovery	Development	Development	UAT	UAT	Migration	Increment - Feature									
+	Network Service												Scope Discovery	Scope Discovery	Scope Discovery	Development	Development	Development	UAT	Migration	Go-Live								
+	Customer Service															Scope Discovery	Development	Development	UAT	Migration	Go-Live								
+	Exponent Asset Management																Scope Discovery	Scope Discovery	Development	UAT	Migration	Go-Live							
+	Work Permit																Scope Discovery	Development	UAT	Migration	Go-Live								
+3	Retrofit Operations												Scope Discovery	Scope Discovery	Scope Discovery	Scope Discovery	Scope Discovery	Scope Discovery	Scope Discovery	Development	UAT	Migration	Go-Live						
+	ECR																			Scope Discovery	Development	Go-Live	Go-Live						
+	FTR																			Scope Discovery	Development	UAT	Migration	Go-Live					
+	Vehicle Service																		Scope Discovery	Scope Discovery	Development	UAT	Migration	Go-Live					
+	Exponent Product Service																			Scope Discovery	Development	Migration	Go-Live						
+	Product Validation (EVT/DVT)																			Scope Discovery	Development	Go-Live	Go-Live						
+4	SNOP Module																		Scope Discovery	Development	Migration	Go-Live	Go-Live						
+	Budget Management																Scope Discovery	Scope Discovery	Scope Discovery	Scope Discovery	Development	UAT	Migration	Go-Live					
+	Manufacturing PQ																				Scope Discovery	Development	UAT	Go-Live	Go-Live				
+	Product Lifecycle																			Scope Discovery	UAT	Migration	Migration	Go-Live				  	
+	Program Lifecycle																			Scope Discovery	UAT	Migration	Migration	Go-Live					
+5	Security Deposit Module																				Scope Discovery	UAT	Go-Live	Go-Live					
+	Fixed Deposit Module																				Scope Discovery	UAT	Go-Live	Go-Live					
+	ERP Ops																				Scope Discovery	UAT	Go-Live	Go-Live					
+	Budget Planning																Scope Discovery	Scope Discovery	Scope Discovery	Scope Discovery	Migration	Go-Live							
+6	EHS Module																			Scope Discovery	UAT	Migration	Go-Live						
+	Manufacturing Execution System																					Scope Discovery	UAT	Migration	Go-Live				
+	Exponent Operations Partner																					Scope Discovery	UAT	Migration	Go-Live				
+	Fleet Management																					Scope Discovery	UAT	Migration	Go-Live				
+	Insurance Tracking Module																					Scope Discovery	UAT	Migration	Go-Live				
+	Part Life cycle Management																				Scope Discovery	Development	UAT	Go-Live	Go-Live				
+	PPAP																				Scope Discovery	Development	UAT	Go-Live	Go-Live				
+	Mobile App																			Scope Discovery	Development	UAT	Go-Live						
+	DFMEA																				Scope Discovery	Development	UAT	Go-Live	Go-Live				
+	Quality Management System																				Scope Discovery	UAT	Go-Live	Go-Live					
+	Frappe SSO																			Scope Discovery	UAT	Migration	Go-Live						
+	HRMS																								Scope Discovery	Development	Migration	Go-Live	

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { rollupTaskTree, TaskNode } from './packages/core';
 import { parseSheet, TemplateConfig, ParsedTask } from './packages/parser';
 import { frappeApi } from './lib/api';
@@ -6,10 +6,21 @@ import * as XLSX from 'xlsx';
 import Papa from 'papaparse';
 
 type Screen = 'templates' | 'templateEditor' | 'gantts' | 'ganttEditor' | 'settings';
-type TemplateDoc = { name: string; template_name?: string; description?: string; field_map?: string; grouping?: string; display_columns?: string; owner: string };
-type GanttDoc = { name: string; template: string; active_style?: string; source_file?: string; parsed_at?: string; owner: string };
+type TemplateDoc = { name: string; description?: string; field_map?: string; grouping?: string; display_columns?: string; owner?: string };
+type GanttDoc = { name: string; template: string; active_style?: string; source_file?: string; parsed_at?: string; owner?: string };
 type TaskDoc = { name: string; gantt: string; parent_task?: string; task_name: string; kind: 'group' | 'leaf'; start_date?: string; end_date?: string; actual_start?: string; actual_end?: string; sort_order: number; fields?: string };
 type StyleDoc = { name: string; template: string; config?: string };
+type StyleConfig = {
+  canvas?: 'light' | 'dark';
+  font?: string;
+  header?: string;
+  footer?: string;
+  colors?: { leaf?: string; group?: string };
+  colors_by_status?: Record<string, string>;
+  status_field?: string;
+};
+
+const FONT_OPTIONS = ['Inter', 'system-ui', 'Georgia', 'Helvetica', 'JetBrains Mono'];
 
 function safeJson<T>(s: string | undefined, fallback: T): T { try { return s ? JSON.parse(s) : fallback; } catch { return fallback; } }
 function toNodes(tasks: TaskDoc[]): TaskNode[] {
@@ -23,13 +34,21 @@ function toNodes(tasks: TaskDoc[]): TaskNode[] {
 }
 function addDays(d: Date, days: number) { const r = new Date(d); r.setDate(r.getDate() + days); return r; }
 function daysBetween(a: Date, b: Date) { return Math.round((b.getTime() - a.getTime()) / 86_400_000); }
+function fieldsOf(t: TaskDoc | undefined): Record<string, any> {
+  if (!t || !t.fields) return {};
+  try { return JSON.parse(t.fields); } catch { return {}; }
+}
 
 export default function App() {
+  // Share-mode: server-rendered template injects window.__OG_SHARE_SNAPSHOT__
+  const shareSnapshot = (window as any).__OG_SHARE_SNAPSHOT__;
+  if (shareSnapshot) return <SharePage snapshot={shareSnapshot} />;
+
   const [user, setUser] = useState<string | null>(null);
   const [screen, setScreen] = useState<Screen>('templates');
   const [editTemplate, setEditTemplate] = useState<string | null>(null);
   const [openGantt, setOpenGantt] = useState<string | null>(null);
-  useEffect(() => { frappeApi.getUser().then((r: any) => setUser(r.message)); }, []);
+  useEffect(() => { frappeApi.getUser().then((r: any) => setUser(r.message)).catch(()=>setUser('Guest')); }, []);
   if (!user) return <div className="empty-state" style={{ height: '100vh' }}><strong>OpenGantt</strong><span>Loading...</span></div>;
 
   return (
@@ -37,12 +56,12 @@ export default function App() {
       <div className="topbar">
         <div className="brand">OpenGantt</div>
         <div className="nav">
-          <button className={screen==='templates'?'active':''} onClick={()=>setScreen('templates')}>Templates</button>
-          <button className={screen==='gantts'?'active':''} onClick={()=>setScreen('gantts')}>Gantts</button>
+          <button className={screen==='templates'||screen==='templateEditor'?'active':''} onClick={()=>setScreen('templates')}>Templates</button>
+          <button className={screen==='gantts'||screen==='ganttEditor'?'active':''} onClick={()=>setScreen('gantts')}>Gantts</button>
           <button className={screen==='settings'?'active':''} onClick={()=>setScreen('settings')}>Settings</button>
         </div>
       </div>
-      <div className="page" style={{ padding: 0 }}>
+      <div className="page-wrap">
         {screen==='templates' && <TemplatesScreen onEdit={(n)=>{setEditTemplate(n);setScreen('templateEditor');}} />}
         {screen==='templateEditor' && <TemplateEditorScreen name={editTemplate} onBack={()=>setScreen('templates')} />}
         {screen==='gantts' && <GanttsScreen onOpen={(n)=>{setOpenGantt(n);setScreen('ganttEditor');}} />}
@@ -57,31 +76,34 @@ function TemplatesScreen({ onEdit }: { onEdit: (n: string) => void }) {
   const [items, setItems] = useState<TemplateDoc[]>([]);
   const [showNew, setShowNew] = useState(false);
   const [newName, setNewName] = useState('');
-  const refresh = () => frappeApi.list('OG Template').then((r: any) => setItems(r || []));
+  const [loading, setLoading] = useState(true);
+  const refresh = () => { setLoading(true); frappeApi.list('OG Template').then((r: any) => { setItems(r || []); setLoading(false); }); };
   useEffect(() => { refresh(); }, []);
   const create = async () => { if (!newName.trim()) return; await frappeApi.create('OG Template', { name: newName }); setNewName(''); setShowNew(false); refresh(); };
   return (
     <div className="page">
-      <div className="page-head"><h1>My Templates</h1><button className="btn btn-primary" onClick={()=>setShowNew(true)}>New Template</button></div>
+      <div className="page-head"><div><h1>My Templates</h1><p>Describe the shape of your input files so they parse into Gantts.</p></div><button className="btn btn-primary" onClick={()=>setShowNew(true)}>New Template</button></div>
       {showNew && (
         <div className="card" style={{ display:'flex', gap:8 }}>
-          <input placeholder="Template name" value={newName} onChange={e=>setNewName(e.target.value)} />
+          <input placeholder="Template name" value={newName} onChange={e=>setNewName(e.target.value)} autoFocus />
           <button className="btn btn-primary" onClick={create}>Save</button>
           <button className="btn btn-ghost" onClick={()=>setShowNew(false)}>Cancel</button>
         </div>
       )}
-      <div className="list">
-        {items.map(t => (
-          <div key={t.name} className="row">
-            <div><strong>{t.name}</strong><span>{t.description || 'No description'}</span></div>
-            <div style={{display:'flex',gap:8}}>
-              <button className="btn btn-ghost" onClick={()=>onEdit(t.name)}>Edit</button>
-              <button className="btn btn-danger" onClick={async ()=>{await frappeApi.delete('OG Template', t.name); refresh();}}>Delete</button>
+      {loading ? <div className="empty-state"><span>Loading templates…</span></div> :
+        <div className="list">
+          {items.map(t => (
+            <div key={t.name} className="row">
+              <div><strong>{t.name}</strong><span>{t.description || 'No description'}</span></div>
+              <div style={{display:'flex',gap:8}}>
+                <button className="btn btn-ghost" onClick={()=>onEdit(t.name)}>Edit</button>
+                <button className="btn btn-danger" onClick={async ()=>{ if(!confirm(`Delete template "${t.name}"?`)) return; await frappeApi.delete('OG Template', t.name); refresh();}}>Delete</button>
+              </div>
             </div>
-          </div>
-        ))}
-        {items.length===0 && <div className="empty-state"><strong>No templates yet</strong><span>Create a template to describe your file shape.</span></div>}
-      </div>
+          ))}
+          {items.length===0 && <div className="empty-state"><strong>No templates yet</strong><span>Create one to describe your spreadsheet's columns.</span></div>}
+        </div>
+      }
     </div>
   );
 }
@@ -92,89 +114,218 @@ function TemplateEditorScreen({ name, onBack }: { name: string | null; onBack: (
   const [grouping, setGrouping] = useState<string[]>([]);
   const [displayColumns, setDisplayColumns] = useState<string[]>([]);
   const [styles, setStyles] = useState<StyleDoc[]>([]);
-  const [showStyle, setShowStyle] = useState(false);
-  const [styleName, setStyleName] = useState('');
-  const [styleConfig, setStyleConfig] = useState('');
+  const [editingStyle, setEditingStyle] = useState<StyleDoc | null>(null);
   const [sampleCols, setSampleCols] = useState<string[]>([]);
-  useEffect(() => { if (!name) return; frappeApi.read('OG Template', name).then((r: any)=>{ setDoc(r); setFieldMap(safeJson(r.field_map,{})); setGrouping(safeJson(r.grouping,[])); setDisplayColumns(safeJson(r.display_columns,[])); }); frappeApi.list('OG Style').then((r: any)=>setStyles((r||[]).filter((s:StyleDoc)=>s.template===name))); }, [name]);
-  const save = async () => { if (!doc) return; await frappeApi.update('OG Template', { name: doc.name, field_map: JSON.stringify(fieldMap), grouping: JSON.stringify(grouping), display_columns: JSON.stringify(displayColumns) }); onBack(); };
-  const createStyle = async () => { if (!doc || !styleName.trim()) return; await frappeApi.create('OG Style', { name: styleName, template: doc.name, config: styleConfig || '{}' }); setShowStyle(false); setStyleName(''); setStyleConfig(''); const r = await frappeApi.list('OG Style'); setStyles((r||[]).filter((s:StyleDoc)=>s.template===doc.name)); };
+  const reload = (n: string) => {
+    frappeApi.read('OG Template', n).then((r: any) => {
+      setDoc(r);
+      setFieldMap(safeJson(r.field_map, {}));
+      setGrouping(safeJson(r.grouping, []));
+      setDisplayColumns(safeJson(r.display_columns, []));
+    });
+    frappeApi.list('OG Style').then((r: any) => setStyles((r || []).filter((s: StyleDoc) => s.template === n)));
+  };
+  useEffect(() => { if (name) reload(name); }, [name]);
+
+  // Merge previously-saved column references so the dropdowns aren't blank without a sample
+  const allCols = useMemo(() => {
+    const set = new Set<string>(sampleCols);
+    Object.values(fieldMap).forEach(c => c && set.add(c));
+    grouping.forEach(c => set.add(c));
+    displayColumns.forEach(c => set.add(c));
+    return Array.from(set);
+  }, [sampleCols, fieldMap, grouping, displayColumns]);
+
+  const save = async () => {
+    if (!doc) return;
+    await frappeApi.update('OG Template', {
+      name: doc.name,
+      field_map: JSON.stringify(fieldMap),
+      grouping: JSON.stringify(grouping),
+      display_columns: JSON.stringify(displayColumns),
+    });
+    onBack();
+  };
   const onSample = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]; if (!file) return;
     const reader = new FileReader();
     reader.onload = () => {
       const data = reader.result;
       try {
-        const wb = XLSX.read(data, { type: 'binary' });
+        const wb = XLSX.read(data, { type: 'binary', cellDates: true });
         const ws = wb.Sheets[wb.SheetNames[0]];
         const json = XLSX.utils.sheet_to_json(ws, { header: 1 }) as any[][];
-        if (json.length) setSampleCols(json[0].map(String));
+        if (json.length) setSampleCols(json[0].map((c: any) => String(c ?? '')).filter(Boolean));
       } catch {
         Papa.parse(String(data), { header: true, complete: (res) => { if (res.meta.fields) setSampleCols(res.meta.fields); } });
       }
     };
     reader.readAsBinaryString(file);
   };
-  if (!doc) return <div className="page">Loading...</div>;
+  const deleteStyle = async (s: StyleDoc) => {
+    if (!confirm(`Delete style "${s.name}"?`)) return;
+    await frappeApi.delete('OG Style', s.name);
+    if (doc) reload(doc.name);
+  };
+  if (!doc) return <div className="page"><div className="empty-state">Loading…</div></div>;
   return (
     <div className="page">
-      <div className="page-head"><h1>{doc.name}</h1><div style={{display:'flex',gap:8}}><button className="btn btn-ghost" onClick={onBack}>Back</button><button className="btn btn-primary" onClick={save}>Save</button></div></div>
+      <div className="page-head">
+        <div><h1>{doc.name}</h1><p>{doc.description || 'Template'}</p></div>
+        <div style={{display:'flex',gap:8}}><button className="btn btn-ghost" onClick={onBack}>Cancel</button><button className="btn btn-primary" onClick={save}>Save changes</button></div>
+      </div>
       <div className="card" style={{display:'grid',gap:12}}>
-        <h3 style={{margin:0}}>Field Map</h3>
-        {['name','start_date','end_date','actual_start','actual_end'].map(k => (
-          <div key={k} className="form"><label>{k}
-            <select value={fieldMap[k]||''} onChange={e=>setFieldMap({...fieldMap,[k]:e.target.value})}>
-              <option value="">--</option>
-              {sampleCols.map(c=><option key={c} value={c}>{c}</option>)}
-            </select>
-          </label></div>
-        ))}
-        <div className="form"><label>Upload sample file to see columns<input type="file" accept=".xlsx,.csv,.xls" onChange={onSample} /></label></div>
+        <h3 style={{margin:0}}>Sample file</h3>
+        <div className="form"><label>Upload a sample to populate the column dropdowns. Saved values are kept even without a sample.<input type="file" accept=".xlsx,.csv,.xls" onChange={onSample} /></label></div>
+        {allCols.length>0 && <div style={{fontSize:12,color:'var(--text-muted)'}}>{allCols.length} columns available</div>}
+      </div>
+      <div className="card" style={{display:'grid',gap:12}}>
+        <h3 style={{margin:0}}>Field map</h3>
+        <p style={{margin:0,color:'var(--text-muted)',fontSize:12}}>Map your file's columns to canonical task fields. <code>name</code> is required for sensible rendering.</p>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(220px,1fr))',gap:12}}>
+          {['name','start_date','end_date','actual_start','actual_end'].map(k => (
+            <div key={k} className="form"><label>{k}
+              <select value={fieldMap[k]||''} onChange={e=>setFieldMap({...fieldMap,[k]:e.target.value})}>
+                <option value="">— none —</option>
+                {allCols.map(c=><option key={c} value={c}>{c}</option>)}
+              </select>
+            </label></div>
+          ))}
+        </div>
       </div>
       <div className="card" style={{display:'grid',gap:12}}>
         <h3 style={{margin:0}}>Grouping</h3>
+        <p style={{margin:0,color:'var(--text-muted)',fontSize:12}}>Each column adds a hierarchy layer of group rows above the leaves.</p>
         <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
           {grouping.map((g,i)=> (
-            <span key={i} style={{background:'var(--surface-sunk)',padding:'4px 8px',borderRadius:6,fontSize:12}}>{g} <button onClick={()=>setGrouping(grouping.filter((_,idx)=>idx!==i))}>x</button></span>
+            <span key={i} className="chip">{g} <button onClick={()=>setGrouping(grouping.filter((_,idx)=>idx!==i))} aria-label="remove">×</button></span>
           ))}
+          {grouping.length===0 && <span style={{color:'var(--text-faint)',fontSize:12}}>Flat list (no grouping)</span>}
         </div>
         <div className="form"><label>Add grouping column
-          <select value="" onChange={e=>{if(e.target.value){setGrouping([...grouping,e.target.value]);e.target.value='';}}}>
-            <option value="">--</option>
-            {sampleCols.filter(c=>!grouping.includes(c)).map(c=><option key={c} value={c}>{c}</option>)}
+          <select value="" onChange={e=>{if(e.target.value){setGrouping([...grouping,e.target.value]);}}}>
+            <option value="">— pick a column —</option>
+            {allCols.filter(c=>!grouping.includes(c)).map(c=><option key={c} value={c}>{c}</option>)}
           </select>
         </label></div>
       </div>
       <div className="card" style={{display:'grid',gap:12}}>
-        <h3 style={{margin:0}}>Display Columns</h3>
-        <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
-          {sampleCols.map(c => (
-            <label key={c} style={{display:'flex',alignItems:'center',gap:6,cursor:'pointer',fontSize:12}}>
-              <input type="checkbox" checked={displayColumns.includes(c)} onChange={()=>setDisplayColumns(displayColumns.includes(c)?displayColumns.filter(x=>x!==c):[...displayColumns,c])} /> {c}
-            </label>
-          ))}
-        </div>
+        <h3 style={{margin:0}}>Display columns</h3>
+        <p style={{margin:0,color:'var(--text-muted)',fontSize:12}}>These appear next to each row in the Gantt sidebar.</p>
+        {allCols.length===0 ? <span style={{color:'var(--text-faint)',fontSize:12}}>Upload a sample to pick columns.</span> :
+          <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+            {allCols.map(c => (
+              <label key={c} className="checkbox-pill">
+                <input type="checkbox" checked={displayColumns.includes(c)} onChange={()=>setDisplayColumns(displayColumns.includes(c)?displayColumns.filter(x=>x!==c):[...displayColumns,c])} /> {c}
+              </label>
+            ))}
+          </div>
+        }
       </div>
       <div className="card" style={{display:'grid',gap:12}}>
-        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}><h3 style={{margin:0}}>Styles</h3><button className="btn btn-primary" onClick={()=>setShowStyle(true)}>New Style</button></div>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}><h3 style={{margin:0}}>Styles</h3><button className="btn btn-primary" onClick={()=>setEditingStyle({name:'', template:doc.name, config:'{}'})}>New Style</button></div>
         <div className="list">
-          {styles.map(s => <div key={s.name} className="row"><strong>{s.name}</strong><span>{s.config || '{}'}</span></div>)}
-          {styles.length===0 && <span style={{color:'var(--text-muted)',fontSize:12}}>No styles yet.</span>}
+          {styles.map(s => {
+            const cfg = safeJson<StyleConfig>(s.config, {});
+            return (
+              <div key={s.name} className="row">
+                <div>
+                  <strong>{s.name}</strong>
+                  <span>{cfg.canvas||'light'} · {cfg.font||'Inter'}{cfg.colors_by_status && Object.keys(cfg.colors_by_status).length>0 ? ' · colored by status':''}</span>
+                </div>
+                <div style={{display:'flex',gap:8,alignItems:'center'}}>
+                  <span style={{width:14,height:14,borderRadius:3,background:cfg.colors?.leaf||'#2563eb',border:'1px solid var(--line)'}} />
+                  <button className="btn btn-ghost" onClick={()=>setEditingStyle(s)}>Edit</button>
+                  <button className="btn btn-danger" onClick={()=>deleteStyle(s)}>Delete</button>
+                </div>
+              </div>
+            );
+          })}
+          {styles.length===0 && <div className="empty-state"><span>No styles yet — add one to control colours and theme.</span></div>}
         </div>
       </div>
-      {showStyle && (
-        <div className="modal-overlay" onClick={()=>setShowStyle(false)}>
-          <div className="modal" onClick={e=>e.stopPropagation()}>
-            <h2>New Style</h2>
-            <input placeholder="Style name" value={styleName} onChange={e=>setStyleName(e.target.value)} />
-            <textarea rows={4} placeholder='Config JSON' value={styleConfig} onChange={e=>setStyleConfig(e.target.value)} />
-            <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}>
-              <button className="btn btn-ghost" onClick={()=>setShowStyle(false)}>Cancel</button>
-              <button className="btn btn-primary" onClick={createStyle}>Save</button>
+      {editingStyle && <StyleEditorModal style={editingStyle} templateName={doc.name} displayColumns={displayColumns} onClose={()=>setEditingStyle(null)} onSaved={()=>{ setEditingStyle(null); if (doc) reload(doc.name); }} />}
+    </div>
+  );
+}
+
+function StyleEditorModal({ style, templateName, displayColumns, onClose, onSaved }: { style: StyleDoc; templateName: string; displayColumns: string[]; onClose: () => void; onSaved: () => void }) {
+  const isNew = !style.name;
+  const [name, setName] = useState(style.name);
+  const initial = safeJson<StyleConfig>(style.config, {});
+  const [canvas, setCanvas] = useState<'light'|'dark'>(initial.canvas || 'light');
+  const [font, setFont] = useState(initial.font || 'Inter');
+  const [header, setHeader] = useState(initial.header || '');
+  const [footer, setFooter] = useState(initial.footer || '');
+  const [leafColor, setLeafColor] = useState(initial.colors?.leaf || '#2563eb');
+  const [groupColor, setGroupColor] = useState(initial.colors?.group || '#0f172a');
+  const [statusField, setStatusField] = useState(initial.status_field || '');
+  const [colorsByStatus, setColorsByStatus] = useState<Record<string,string>>(initial.colors_by_status || {});
+  const [newStatusKey, setNewStatusKey] = useState('');
+  const save = async () => {
+    if (!name.trim()) return;
+    const config: StyleConfig = {
+      canvas, font, header, footer,
+      colors: { leaf: leafColor, group: groupColor },
+      status_field: statusField || undefined,
+      colors_by_status: Object.keys(colorsByStatus).length ? colorsByStatus : undefined,
+    };
+    const body: any = { name, template: templateName, config: JSON.stringify(config) };
+    if (isNew) {
+      await frappeApi.create('OG Style', body);
+    } else {
+      await frappeApi.update('OG Style', body);
+    }
+    onSaved();
+  };
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={e=>e.stopPropagation()}>
+        <h2>{isNew ? 'New style' : `Edit style: ${name}`}</h2>
+        {isNew && <div className="form"><label>Style name<input value={name} onChange={e=>setName(e.target.value)} autoFocus /></label></div>}
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
+          <div className="form"><label>Canvas
+            <select value={canvas} onChange={e=>setCanvas(e.target.value as any)}><option value="light">Light</option><option value="dark">Dark</option></select>
+          </label></div>
+          <div className="form"><label>Font
+            <select value={font} onChange={e=>setFont(e.target.value)}>{FONT_OPTIONS.map(f=><option key={f}>{f}</option>)}</select>
+          </label></div>
+        </div>
+        <div className="form"><label>Header text<input value={header} onChange={e=>setHeader(e.target.value)} /></label></div>
+        <div className="form"><label>Footer text<input value={footer} onChange={e=>setFooter(e.target.value)} /></label></div>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
+          <div className="form"><label>Leaf bar colour<input type="color" value={leafColor} onChange={e=>setLeafColor(e.target.value)} /></label></div>
+          <div className="form"><label>Group bar colour<input type="color" value={groupColor} onChange={e=>setGroupColor(e.target.value)} /></label></div>
+        </div>
+        <div className="form"><label>Status field (optional)
+          <select value={statusField} onChange={e=>setStatusField(e.target.value)}>
+            <option value="">— none —</option>
+            {displayColumns.map(c=><option key={c} value={c}>{c}</option>)}
+          </select>
+        </label>
+          <span style={{fontSize:11,color:'var(--text-muted)'}}>If set, leaf bars colour by this field's value using the map below.</span>
+        </div>
+        {statusField && (
+          <div style={{display:'grid',gap:8,border:'1px solid var(--line)',borderRadius:8,padding:12}}>
+            <strong style={{fontSize:12}}>Colours by {statusField}</strong>
+            {Object.entries(colorsByStatus).map(([k,v]) => (
+              <div key={k} style={{display:'grid',gridTemplateColumns:'1fr 60px 30px',gap:8,alignItems:'center'}}>
+                <span style={{fontSize:12}}>{k}</span>
+                <input type="color" value={v} onChange={e=>setColorsByStatus({...colorsByStatus,[k]:e.target.value})} />
+                <button className="btn btn-ghost" onClick={()=>{ const next = {...colorsByStatus}; delete next[k]; setColorsByStatus(next); }}>×</button>
+              </div>
+            ))}
+            <div style={{display:'flex',gap:8}}>
+              <input placeholder="status value" value={newStatusKey} onChange={e=>setNewStatusKey(e.target.value)} style={{flex:1}} />
+              <button className="btn btn-ghost" onClick={()=>{ if(!newStatusKey.trim()) return; setColorsByStatus({...colorsByStatus,[newStatusKey]:'#2563eb'}); setNewStatusKey(''); }}>Add</button>
             </div>
           </div>
+        )}
+        <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}>
+          <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+          <button className="btn btn-primary" onClick={save}>Save</button>
         </div>
-      )}
+      </div>
     </div>
   );
 }
@@ -186,7 +337,8 @@ function GanttsScreen({ onOpen }: { onOpen: (n: string) => void }) {
   const [selTemplate, setSelTemplate] = useState('');
   const [preview, setPreview] = useState<ParsedTask[] | null>(null);
   const [newName, setNewName] = useState('');
-  const refresh = () => frappeApi.list('OG Gantt').then((r: any) => setItems(r || []));
+  const [loading, setLoading] = useState(true);
+  const refresh = () => { setLoading(true); frappeApi.list('OG Gantt').then((r: any) => { setItems(r||[]); setLoading(false); }); };
   useEffect(() => { refresh(); frappeApi.list('OG Template').then((r: any)=>setTemplates(r||[])); }, []);
   const onUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0]; if (!f) return;
@@ -195,9 +347,9 @@ function GanttsScreen({ onOpen }: { onOpen: (n: string) => void }) {
       const data = reader.result;
       let rows: Record<string,any>[] = [];
       try {
-        const wb = XLSX.read(data, { type: 'binary' });
+        const wb = XLSX.read(data, { type: 'binary', cellDates: true });
         const ws = wb.Sheets[wb.SheetNames[0]];
-        rows = XLSX.utils.sheet_to_json<Record<string,any>>(ws);
+        rows = XLSX.utils.sheet_to_json<Record<string,any>>(ws, { defval: '' });
       } catch {
         Papa.parse(String(data), { header: true, skipEmptyLines: true, complete: (res) => { rows = res.data as Record<string,any>[]; } });
       }
@@ -211,160 +363,336 @@ function GanttsScreen({ onOpen }: { onOpen: (n: string) => void }) {
   };
   const saveGantt = async () => {
     if (!newName.trim() || !selTemplate || !preview) return;
-    const g = await frappeApi.create('OG Gantt', { name: newName, template: selTemplate });
+    const g = await frappeApi.create('OG Gantt', { name: newName, template: selTemplate, parsed_at: new Date().toISOString() });
     await frappeApi.parseUpload({ gantt: g.name, tasks: preview });
     setShowNew(false); setPreview(null); setNewName(''); setSelTemplate(''); refresh();
   };
   return (
     <div className="page">
-      <div className="page-head"><h1>My Gantts</h1><button className="btn btn-primary" onClick={()=>setShowNew(true)}>New Gantt</button></div>
+      <div className="page-head"><div><h1>My Gantts</h1><p>Upload spreadsheets against templates to generate Gantts.</p></div><button className="btn btn-primary" onClick={()=>setShowNew(true)} disabled={templates.length===0}>New Gantt</button></div>
+      {templates.length===0 && <div className="empty-state"><strong>You need a template first</strong><span>Create one on the Templates screen, then return here.</span></div>}
       {showNew && (
         <div className="card" style={{display:'grid',gap:12}}>
-          <div className="form"><label>Gantt name<input value={newName} onChange={e=>setNewName(e.target.value)} /></label></div>
+          <div className="form"><label>Gantt name<input value={newName} onChange={e=>setNewName(e.target.value)} autoFocus /></label></div>
           <div className="form"><label>Template
-            <select value={selTemplate} onChange={e=>setSelTemplate(e.target.value)}><option value="">--</option>{templates.map(t=><option key={t.name} value={t.name}>{t.name}</option>)}</select>
+            <select value={selTemplate} onChange={e=>setSelTemplate(e.target.value)}><option value="">— pick —</option>{templates.map(t=><option key={t.name} value={t.name}>{t.name}</option>)}</select>
           </label></div>
-          <div className="form"><label>Upload file (xlsx/csv)<input type="file" accept=".xlsx,.csv,.xls" onChange={onUpload} /></label></div>
+          <div className="form"><label>Upload file (xlsx / csv)<input type="file" accept=".xlsx,.csv,.xls" onChange={onUpload} /></label></div>
           {preview && (
-            <div style={{maxHeight:220,overflow:'auto',border:'1px solid var(--line)',borderRadius:6}}>
-              <table style={{width:'100%',fontSize:12,borderCollapse:'collapse'}}>
-                <thead style={{background:'var(--surface-soft)'}}><tr>{['name','kind','parent'].map(h=><th key={h} style={{padding:'6px 8px',textAlign:'left'}}>{h}</th>)}</tr></thead>
-                <tbody>{preview.slice(0,30).map((t,i)=><tr key={i} style={{borderTop:'1px solid var(--line-soft)'}}><td style={{padding:'4px 8px'}}>{t.task_name}</td><td style={{padding:'4px 8px'}}>{t.kind}</td><td style={{padding:'4px 8px'}}>{t.parent_temp_id?.slice(0,6)||'-'}</td></tr>)}</tbody>
+            <div style={{maxHeight:240,overflow:'auto',border:'1px solid var(--line)',borderRadius:6}}>
+              <table className="preview"><thead><tr><th>Task</th><th>Kind</th><th>Start</th><th>End</th></tr></thead>
+                <tbody>{preview.slice(0,60).map((t,i)=><tr key={i}><td style={{paddingLeft:`${(t.parent_temp_id?16:0)+8}px`}}>{t.task_name}</td><td>{t.kind}</td><td>{t.start_date||''}</td><td>{t.end_date||''}</td></tr>)}</tbody>
               </table>
-              {preview.length>30 && <div style={{padding:8,fontSize:11,color:'var(--text-muted)'}}>...and {preview.length-30} more rows</div>}
+              {preview.length>60 && <div style={{padding:8,fontSize:11,color:'var(--text-muted)'}}>…and {preview.length-60} more rows</div>}
             </div>
           )}
           <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}>
             <button className="btn btn-ghost" onClick={()=>{setShowNew(false);setPreview(null);}}>Cancel</button>
-            <button className="btn btn-primary" onClick={saveGantt} disabled={!preview}>Save Gantt</button>
+            <button className="btn btn-primary" onClick={saveGantt} disabled={!preview||!newName.trim()}>Save Gantt</button>
           </div>
         </div>
       )}
-      <div className="list">
-        {items.map(g => (
-          <div key={g.name} className="row">
-            <div><strong>{g.name}</strong><span>{g.template}</span></div>
-            <div style={{display:'flex',gap:8}}>
-              <button className="btn btn-ghost" onClick={()=>onOpen(g.name)}>Open</button>
-              <button className="btn btn-danger" onClick={async ()=>{await frappeApi.delete('OG Gantt', g.name); refresh();}}>Delete</button>
+      {loading ? <div className="empty-state"><span>Loading Gantts…</span></div> :
+        <div className="list">
+          {items.map(g => (
+            <div key={g.name} className="row">
+              <div><strong>{g.name}</strong><span>{g.template}{g.parsed_at?` · parsed ${new Date(g.parsed_at).toLocaleDateString()}`:''}</span></div>
+              <div style={{display:'flex',gap:8}}>
+                <button className="btn btn-primary" onClick={()=>onOpen(g.name)}>Open</button>
+                <button className="btn btn-danger" onClick={async ()=>{ if(!confirm(`Delete Gantt "${g.name}" and all its tasks?`)) return; await frappeApi.delete('OG Gantt', g.name); refresh();}}>Delete</button>
+              </div>
             </div>
-          </div>
-        ))}
-        {items.length===0 && <div className="empty-state"><strong>No Gantts yet</strong><span>Upload a file against a template to create one.</span></div>}
-      </div>
+          ))}
+          {items.length===0 && !loading && <div className="empty-state"><strong>No Gantts yet</strong><span>Upload a file against a template to create one.</span></div>}
+        </div>
+      }
     </div>
   );
+}
+
+function useTaskTree(tasks: TaskDoc[], groupBy: string | null) {
+  // If groupBy is set, ignore stored parent_task and re-group leaves by fields[groupBy]
+  return useMemo(() => {
+    if (!groupBy || groupBy === '__stored__') {
+      return rollupTaskTree(toNodes(tasks));
+    }
+    if (groupBy === '__flat__') {
+      const flat = tasks.filter(t=>t.kind==='leaf').map(t => ({ ...t, parent_task: undefined }));
+      return rollupTaskTree(toNodes(flat));
+    }
+    // Re-group by field value
+    const leaves = tasks.filter(t=>t.kind==='leaf');
+    const groupMap = new Map<string, TaskDoc>();
+    const out: TaskDoc[] = [];
+    for (const t of leaves) {
+      const value = String(fieldsOf(t)[groupBy] ?? '—');
+      const key = `__grp__${groupBy}__${value}`;
+      if (!groupMap.has(key)) {
+        const g: TaskDoc = {
+          name: key, gantt: t.gantt, task_name: value, kind: 'group',
+          sort_order: 0, parent_task: undefined,
+        };
+        groupMap.set(key, g);
+        out.push(g);
+      }
+      out.push({ ...t, parent_task: key });
+    }
+    return rollupTaskTree(toNodes(out));
+  }, [tasks, groupBy]);
 }
 
 function GanttEditorScreen({ name, onBack }: { name: string | null; onBack: () => void }) {
   const [gantt, setGantt] = useState<GanttDoc | null>(null);
   const [tasks, setTasks] = useState<TaskDoc[]>([]);
+  const [template, setTemplate] = useState<TemplateDoc | null>(null);
   const [styles, setStyles] = useState<StyleDoc[]>([]);
   const [selStyle, setSelStyle] = useState('');
   const [selectedTask, setSelectedTask] = useState<string | null>(null);
-  const [zoom, setZoom] = useState<string>('week');
+  const [zoom, setZoom] = useState<'day'|'week'|'month'|'quarter'>('month');
   const [filter, setFilter] = useState('');
+  const [groupBy, setGroupBy] = useState<string>('__stored__');
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [showShare, setShowShare] = useState(false);
   const [shareUrl, setShareUrl] = useState('');
-  useEffect(() => { if (!name) return; frappeApi.read('OG Gantt', name).then((r: any)=>{setGantt(r);setSelStyle(r.active_style||'');}); frappeApi.list('OG Task').then((r: any)=>setTasks((r||[]).filter((t:TaskDoc)=>t.gantt===name))); }, [name]);
-  useEffect(() => { if (!gantt) return; frappeApi.list('OG Style').then((r: any)=>setStyles((r||[]).filter((s:StyleDoc)=>s.template===gantt.template))); }, [gantt]);
+  const [loading, setLoading] = useState(true);
+  const reload = (n: string) => Promise.all([
+    frappeApi.read('OG Gantt', n).then((r:any)=>setGantt(r)),
+    frappeApi.list('OG Task').then((r:any)=>setTasks((r||[]).filter((t:TaskDoc)=>t.gantt===n))),
+  ]).then(()=>setLoading(false));
+  useEffect(() => { if (name) { setLoading(true); reload(name); } }, [name]);
+  useEffect(() => {
+    if (!gantt) return;
+    setSelStyle(gantt.active_style || '');
+    frappeApi.read('OG Template', gantt.template).then((r:any)=>setTemplate(r));
+    frappeApi.list('OG Style').then((r:any)=>setStyles((r||[]).filter((s:StyleDoc)=>s.template===gantt.template)));
+  }, [gantt]);
 
-  const nodes = useMemo(()=>rollupTaskTree(toNodes(tasks)), [tasks]);
-  const filtered = useMemo(()=>{
-    if (!filter.trim()) return nodes;
-    const f = filter.toLowerCase();
-    return nodes.filter(n=>n.name.toLowerCase().includes(f));
-  }, [nodes, filter]);
-  const dates = useMemo(()=>{
-    const starts = filtered.map(n=>n.rollupStartDate||n.startDate).filter(Boolean) as string[];
-    const ends = filtered.map(n=>n.rollupEndDate||n.endDate).filter(Boolean) as string[];
-    if (!starts.length) { const today=new Date(); return {start:today,end:addDays(today,30)}; }
+  const styleCfg = useMemo<StyleConfig>(() => {
+    const s = styles.find(x=>x.name===selStyle);
+    return s ? safeJson(s.config, {}) : {};
+  }, [styles, selStyle]);
+  const displayColumns: string[] = useMemo(() => safeJson<string[]>(template?.display_columns, []), [template]);
+  const grouping: string[] = useMemo(() => safeJson<string[]>(template?.grouping, []), [template]);
+
+  const nodes = useTaskTree(tasks, groupBy);
+  const docById = useMemo(() => Object.fromEntries(tasks.map(t=>[t.name, t])) as Record<string, TaskDoc>, [tasks]);
+
+  // Apply filter + collapse
+  const visible = useMemo(() => {
+    const f = filter.trim().toLowerCase();
+    const matches = (n: TaskNode) => !f || n.name.toLowerCase().includes(f) || displayColumns.some(c => String(fieldsOf(docById[n.id])[c]||'').toLowerCase().includes(f));
+    // Build child index
+    const childrenOf = new Map<string|null,TaskNode[]>();
+    for (const n of nodes) {
+      const arr = childrenOf.get(n.parentId) || [];
+      arr.push(n);
+      childrenOf.set(n.parentId, arr);
+    }
+    const out: Array<TaskNode & { depth: number }> = [];
+    function walk(parentId: string|null, depth: number) {
+      for (const n of (childrenOf.get(parentId) || [])) {
+        const cn = { ...n, depth };
+        if (!f || matches(n) || hasMatchingDescendant(n, childrenOf, matches)) {
+          out.push(cn);
+          if (!collapsed.has(n.id)) walk(n.id, depth + 1);
+        }
+      }
+    }
+    walk(null, 0);
+    return out;
+  }, [nodes, filter, collapsed, displayColumns, docById]);
+
+  const datedTasks = useMemo(() => visible.filter(n => n.rollupStartDate || n.startDate), [visible]);
+  const hasDates = datedTasks.length > 0;
+  const dates = useMemo(() => {
+    if (!hasDates) { const today=new Date(); return {start: addDays(today,-15), end: addDays(today, 45)}; }
+    const starts = datedTasks.map(n => n.rollupStartDate || n.startDate).filter(Boolean) as string[];
+    const ends = datedTasks.map(n => n.rollupEndDate || n.endDate || n.startDate).filter(Boolean) as string[];
     const s = new Date(`${starts.reduce((a,b)=>a<b?a:b)}T00:00:00Z`);
     const e = new Date(`${ends.reduce((a,b)=>a>b?a:b)}T00:00:00Z`);
-    return {start: addDays(s,-7), end: addDays(e,7)};
-  }, [filtered]);
-  const pxPerDay = zoom==='day'?40:zoom==='week'?20:zoom==='month'?8:4;
+    return { start: addDays(s,-7), end: addDays(e,7) };
+  }, [datedTasks, hasDates]);
+  const pxPerDay = zoom==='day'?40:zoom==='week'?12:zoom==='month'?4:1.8;
   const totalDays = Math.max(1, daysBetween(dates.start, dates.end));
   const timelineWidth = totalDays * pxPerDay;
+
+  // Synchronized vertical scroll
+  const sidebarRef = useRef<HTMLDivElement>(null);
+  const canvasRef = useRef<HTMLDivElement>(null);
+  const syncing = useRef(false);
+  const syncFrom = (src: 'sidebar'|'canvas') => () => {
+    if (syncing.current) return;
+    const a = sidebarRef.current, b = canvasRef.current;
+    if (!a || !b) return;
+    syncing.current = true;
+    if (src==='sidebar') b.scrollTop = a.scrollTop; else a.scrollTop = b.scrollTop;
+    requestAnimationFrame(() => { syncing.current = false; });
+  };
+
+  const toggleCollapse = (id: string) => {
+    const next = new Set(collapsed);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    setCollapsed(next);
+  };
+
   const share = async () => {
     if (!gantt) return;
-    const snapshot = { tasks, style: selStyle };
+    const snapshot = { tasks, template, style: styleCfg, displayColumns };
     const r = await frappeApi.publishShare({ gantt: gantt.name, snapshot });
     setShareUrl(window.location.origin + r.url);
     setShowShare(true);
   };
   const exportHtml = () => {
-    const html = `<!doctype html><html><head><meta charset="utf-8"><title>OpenGantt Export</title><style>${document.querySelector('style')?.innerHTML||''}</style></head><body><div id="root"></div><script>window.__OG_EXPORT__=${JSON.stringify({tasks,style:selStyle})};</script></body></html>`;
+    if (!gantt) return;
+    const css = Array.from(document.styleSheets).flatMap(s => { try { return Array.from(s.cssRules).map(r=>r.cssText); } catch { return []; } }).join('\n');
+    const payload = { tasks, template, style: styleCfg, displayColumns };
+    const html = `<!doctype html><html><head><meta charset="utf-8"><title>${gantt.name}</title><style>${css}</style></head><body><div id="root"></div><script>window.__OG_SHARE_SNAPSHOT__=${JSON.stringify(payload)};</script><script src="/assets/opengantt/opengantt/main.js"></script></body></html>`;
     const blob = new Blob([html], { type: 'text/html' });
-    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `${gantt?.name||'gantt'}.html`; a.click();
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `${gantt.name}.html`; a.click();
   };
   const reimport = async () => {
-    if (!gantt || !window.confirm('Re-import will replace all tasks. Continue?')) return;
-    // For now just a stub: would re-read source_file and re-parse
-    alert('Re-import not fully wired in this build.');
+    if (!gantt) return;
+    if (!confirm('Re-import will replace all tasks (any side-panel edits since last import will be lost). Continue?')) return;
+    try {
+      await frappeApi.reimport({ gantt: gantt.name });
+      if (name) reload(name);
+    } catch (e: any) {
+      alert(e?.message || 'Re-import failed. Make sure the Gantt has a source_file attached.');
+    }
   };
+  const changeStyle = async (val: string) => {
+    setSelStyle(val);
+    if (gantt) await frappeApi.update('OG Gantt', { name: gantt.name, active_style: val || null });
+  };
+
+  if (loading || !gantt) return <div className="page"><div className="empty-state">Loading Gantt…</div></div>;
+
+  const themeAttr = styleCfg.canvas==='dark' ? 'dark' : 'light';
   return (
-    <div style={{display:'flex',flexDirection:'column',height:'100%',overflow:'hidden'}}>
-      <div className="topbar" style={{borderBottom:'1px solid var(--line)'}}>
-        <button className="btn btn-ghost" onClick={onBack}>Back</button>
-        <strong style={{fontSize:15}}>{gantt?.name}</strong>
-        <input className="searchbox" style={{flex:1,minWidth:200}} placeholder="Filter tasks..." value={filter} onChange={e=>setFilter(e.target.value)} />
-        <select value={zoom} onChange={e=>setZoom(e.target.value)} style={{height:30}}><option>day</option><option>week</option><option>month</option><option>quarter</option></select>
-        <select value={selStyle} onChange={e=>{setSelStyle(e.target.value); if(gantt)frappeApi.update('OG Gantt',{name:gantt.name,active_style:e.target.value});}} style={{height:30}}><option value="">Default</option>{styles.map(s=><option key={s.name} value={s.name}>{s.name}</option>)}</select>
+    <div className="gantt-screen" data-theme={themeAttr} style={{ fontFamily: styleCfg.font ? `${styleCfg.font}, ui-sans-serif, system-ui` : undefined }}>
+      <div className="gantt-toolbar">
+        <button className="btn btn-ghost" onClick={onBack}>← Back</button>
+        <strong style={{fontSize:14}}>{gantt.name}</strong>
+        {styleCfg.header && <span className="header-text">{styleCfg.header}</span>}
+        <input className="searchbox" placeholder="Filter…" value={filter} onChange={e=>setFilter(e.target.value)} />
+        <label className="inline-control">Group by
+          <select value={groupBy} onChange={e=>setGroupBy(e.target.value)}>
+            <option value="__stored__">As imported</option>
+            <option value="__flat__">Flat</option>
+            {grouping.map(g => <option key={g} value={g}>{g}</option>)}
+            {displayColumns.filter(c=>!grouping.includes(c)).map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+        </label>
+        <label className="inline-control">Zoom
+          <select value={zoom} onChange={e=>setZoom(e.target.value as any)}>
+            <option value="day">Day</option><option value="week">Week</option><option value="month">Month</option><option value="quarter">Quarter</option>
+          </select>
+        </label>
+        <label className="inline-control">Style
+          <select value={selStyle} onChange={e=>changeStyle(e.target.value)}>
+            <option value="">Default</option>
+            {styles.map(s=><option key={s.name} value={s.name}>{s.name}</option>)}
+          </select>
+        </label>
         <button className="btn btn-ghost" onClick={share}>Share</button>
         <button className="btn btn-ghost" onClick={exportHtml}>Export HTML</button>
         <button className="btn btn-ghost" onClick={reimport}>Re-import</button>
       </div>
-      <div className="gantt-layout" style={{flex:1,minHeight:0}}>
+      <div className="gantt-body">
         <div className="gantt-sidebar">
-          <div style={{display:'grid',gridTemplateColumns:'24px 1fr',padding:'8px 12px',borderBottom:'1px solid var(--line)',background:'var(--surface-soft)',fontSize:10.5,fontWeight:800,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'0.06em'}}>
+          <div className="gantt-sidebar-head" style={{gridTemplateColumns: `28px minmax(180px,1fr) ${displayColumns.map(()=>'minmax(80px,140px)').join(' ')}`}}>
             <span></span><span>Task</span>
+            {displayColumns.map(c => <span key={c}>{c}</span>)}
           </div>
-          <div style={{overflow:'auto',flex:1}}>
-            {filtered.map(t => (
-              <div key={t.id} className={`task-row ${selectedTask===t.id?'selected':''}`} style={{paddingLeft: `${12 + (t.depth||0)*16}px`}} onClick={()=>setSelectedTask(t.id)}>
-                <span>{t.name}</span>
-              </div>
-            ))}
+          <div className="gantt-sidebar-body" ref={sidebarRef} onScroll={syncFrom('sidebar')}>
+            {visible.map(n => {
+              const doc = docById[n.id];
+              const isGroup = n.taskType === 'group';
+              const fields = fieldsOf(doc);
+              const isCollapsed = collapsed.has(n.id);
+              const statusField = styleCfg.status_field;
+              return (
+                <div key={n.id}
+                     className={`task-row ${selectedTask===n.id?'selected':''} ${isGroup?'is-group':''}`}
+                     style={{gridTemplateColumns:`28px minmax(180px,1fr) ${displayColumns.map(()=>'minmax(80px,140px)').join(' ')}`, paddingLeft: `${8 + n.depth*16}px`}}
+                     onClick={()=>setSelectedTask(n.id)}>
+                  <span className="caret" onClick={e=>{e.stopPropagation(); if (isGroup) toggleCollapse(n.id);}}>
+                    {isGroup ? (isCollapsed ? '▸' : '▾') : ''}
+                  </span>
+                  <span className="task-name">{n.name}</span>
+                  {displayColumns.map(c => {
+                    const v = fields[c];
+                    const isStatus = statusField && c === statusField && styleCfg.colors_by_status?.[String(v)];
+                    return (
+                      <span key={c} className="cell">
+                        {v != null && v !== '' ? (
+                          isStatus ? <span className="pill" style={{background: styleCfg.colors_by_status![String(v)]}}>{String(v)}</span> : String(v)
+                        ) : <span className="dim">—</span>}
+                      </span>
+                    );
+                  })}
+                </div>
+              );
+            })}
+            {visible.length===0 && <div className="empty-state"><span>No tasks match the filter.</span></div>}
           </div>
         </div>
-        <div className="gantt-canvas">
-          <div style={{position:'relative',height:'100%',overflow:'auto'}}>
-            <div style={{position:'sticky',top:0,zIndex:4,display:'grid',gridTemplateRows:'24px 22px',borderBottom:'1px solid var(--line)',background:'var(--surface-soft)',width:timelineWidth}}>
-              <div style={{display:'flex',fontSize:10.5,fontWeight:700,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'0.04em'}}>
-                {Array.from({length:totalDays}).map((_,i)=>{ const d=addDays(dates.start,i); if (d.getDate()===1) return <div key={i} style={{width:pxPerDay,boxSizing:'border-box',borderRight:'1px solid var(--line-soft)',paddingLeft:4}}>{d.toLocaleString('default',{month:'short'})}</div>; return <div key={i} style={{width:pxPerDay,borderRight:'1px solid var(--line-soft)'}} />; })}
-              </div>
-              <div style={{display:'flex',fontSize:10.5,color:'var(--text-faint)',fontWeight:600}}>
-                {Array.from({length:totalDays}).map((_,i)=>{ const d=addDays(dates.start,i); return <div key={i} style={{width:pxPerDay,display:'grid',placeItems:'center',borderRight:'1px solid var(--line-soft)'}}>{d.getDate()}</div>; })}
-              </div>
+        <div className="gantt-canvas" ref={canvasRef} onScroll={syncFrom('canvas')}>
+          {!hasDates ? (
+            <div className="empty-state" style={{margin:24}}>
+              <strong>No timeline yet</strong>
+              <span>None of the visible tasks have Start / End dates. Click a row to set dates in the side panel, or re-import a file that includes dates.</span>
             </div>
-            <div style={{position:'relative',width:timelineWidth}}>
-              {filtered.map((t) => {
-                const s = new Date(`${t.rollupStartDate||t.startDate}T00:00:00Z`);
-                const e = new Date(`${t.rollupEndDate||t.endDate}T00:00:00Z`);
-                const left = daysBetween(dates.start, s) * pxPerDay;
-                const width = Math.max(2, (daysBetween(s, e)+1) * pxPerDay);
-                return (
-                  <div key={t.id} className={`task-row ${selectedTask===t.id?'selected':''}`} style={{position:'relative',height:36,borderBottom:'1px solid var(--line-soft)'}}>
-                    {(t.rollupStartDate||t.startDate) && (
-                      <div className="bar" style={{left, width, background: t.kind==='group'?'var(--text)':'var(--blue)'}}>
-                        <strong>{t.name}</strong>
+          ) : (
+            <>
+              <div className="gantt-time-header" style={{width: timelineWidth}}>
+                <div className="time-row months">{renderMonthSpans(dates.start, totalDays, pxPerDay)}</div>
+                <div className="time-row days">{renderDayTicks(dates.start, totalDays, pxPerDay, zoom)}</div>
+              </div>
+              <div className="gantt-rows" style={{width: timelineWidth}}>
+                {visible.map(n => {
+                  const ds = n.rollupStartDate || n.startDate;
+                  const de = n.rollupEndDate || n.endDate || ds;
+                  if (!ds) return <div key={n.id} className={`task-row canvas ${selectedTask===n.id?'selected':''}`} />;
+                  const s = new Date(`${ds}T00:00:00Z`);
+                  const e = new Date(`${de}T00:00:00Z`);
+                  const left = daysBetween(dates.start, s) * pxPerDay;
+                  const width = Math.max(3, (daysBetween(s, e)+1) * pxPerDay);
+                  const isGroup = n.taskType === 'group';
+                  let bg = isGroup ? (styleCfg.colors?.group || '#0f172a') : (styleCfg.colors?.leaf || '#2563eb');
+                  if (!isGroup && styleCfg.status_field && styleCfg.colors_by_status) {
+                    const sv = fieldsOf(docById[n.id])[styleCfg.status_field];
+                    const c = sv != null ? styleCfg.colors_by_status[String(sv)] : undefined;
+                    if (c) bg = c;
+                  }
+                  return (
+                    <div key={n.id} className={`task-row canvas ${selectedTask===n.id?'selected':''}`} onClick={()=>setSelectedTask(n.id)}>
+                      <div className="bar" style={{ left, width, background: bg, opacity: isGroup?0.6:1 }}>
+                        <strong>{n.name}</strong>
                       </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </>
+          )}
         </div>
       </div>
+      {styleCfg.footer && <div className="footer-text">{styleCfg.footer}</div>}
       {selectedTask && (
-        <TaskPanel task={nodes.find(n=>n.id===selectedTask)!} tasks={tasks} onClose={()=>setSelectedTask(null)} onUpdate={()=>{ if(name)frappeApi.list('OG Task').then((r:any)=>setTasks((r||[]).filter((t:TaskDoc)=>t.gantt===name))); }} />
+        <TaskPanel
+          task={nodes.find(n=>n.id===selectedTask)!}
+          doc={docById[selectedTask]}
+          displayColumns={displayColumns}
+          onClose={()=>setSelectedTask(null)}
+          onSaved={()=>{ if (name) reload(name); }}
+        />
       )}
       {showShare && (
         <div className="modal-overlay" onClick={()=>setShowShare(false)}>
           <div className="modal" onClick={e=>e.stopPropagation()}>
-            <h2>Share URL</h2>
+            <h2>Public share URL</h2>
+            <p style={{margin:0,color:'var(--text-muted)',fontSize:12}}>This is a frozen snapshot — future edits do not affect it. Re-share to publish a new version.</p>
             <input value={shareUrl} readOnly onFocus={e=>e.target.select()} style={{width:'100%'}} />
             <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}>
               <button className="btn btn-primary" onClick={()=>{navigator.clipboard.writeText(shareUrl);setShowShare(false);}}>Copy</button>
@@ -377,30 +705,87 @@ function GanttEditorScreen({ name, onBack }: { name: string | null; onBack: () =
   );
 }
 
-function TaskPanel({ task, tasks, onClose, onUpdate }: { task: TaskNode; tasks: TaskDoc[]; onClose: () => void; onUpdate: () => void }) {
-  const doc = tasks.find(t=>t.name===task.id);
+function hasMatchingDescendant(n: TaskNode, idx: Map<string|null,TaskNode[]>, matches: (n:TaskNode)=>boolean): boolean {
+  const children = idx.get(n.id) || [];
+  for (const c of children) {
+    if (matches(c)) return true;
+    if (hasMatchingDescendant(c, idx, matches)) return true;
+  }
+  return false;
+}
+
+function renderMonthSpans(start: Date, totalDays: number, pxPerDay: number) {
+  const out: React.ReactNode[] = [];
+  let i = 0;
+  while (i < totalDays) {
+    const d = addDays(start, i);
+    const monthEnd = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth()+1, 1));
+    const remaining = Math.min(totalDays - i, Math.ceil((monthEnd.getTime() - d.getTime())/86_400_000));
+    const w = remaining * pxPerDay;
+    out.push(<div key={i} className="month-cell" style={{width: w}}>{d.toLocaleString('default',{month:'short', year:'2-digit'})}</div>);
+    i += remaining;
+  }
+  return out;
+}
+function renderDayTicks(start: Date, totalDays: number, pxPerDay: number, zoom: string) {
+  // Skip per-day ticks at coarse zooms to keep DOM small
+  if (zoom === 'quarter' || zoom === 'month') {
+    const out: React.ReactNode[] = [];
+    let i = 0;
+    while (i < totalDays) {
+      const d = addDays(start, i);
+      const monthEnd = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth()+1, 1));
+      const remaining = Math.min(totalDays - i, Math.ceil((monthEnd.getTime() - d.getTime())/86_400_000));
+      out.push(<div key={i} className="day-cell" style={{width: remaining*pxPerDay}}></div>);
+      i += remaining;
+    }
+    return out;
+  }
+  const out: React.ReactNode[] = [];
+  for (let i = 0; i < totalDays; i++) {
+    const d = addDays(start, i);
+    out.push(<div key={i} className="day-cell" style={{width: pxPerDay}}>{zoom==='day'?d.getUTCDate():''}</div>);
+  }
+  return out;
+}
+
+function TaskPanel({ task, doc, displayColumns, onClose, onSaved }: { task: TaskNode; doc: TaskDoc | undefined; displayColumns: string[]; onClose: () => void; onSaved: () => void }) {
   const [name, setName] = useState(task.name);
-  const [start, setStart] = useState(task.startDate||'');
-  const [end, setEnd] = useState(task.endDate||'');
-  const [fields, setFields] = useState<Record<string,any>>({});
-  useEffect(() => { if (!doc) return; try { setFields(JSON.parse(doc.fields||'{}')); } catch {} }, [doc]);
+  const [start, setStart] = useState((doc?.start_date||'').slice(0,10));
+  const [end, setEnd] = useState((doc?.end_date||'').slice(0,10));
+  const [fields, setFields] = useState<Record<string,any>>(() => fieldsOf(doc));
+  useEffect(() => {
+    setName(task.name);
+    setStart((doc?.start_date||'').slice(0,10));
+    setEnd((doc?.end_date||'').slice(0,10));
+    setFields(fieldsOf(doc));
+  }, [task.id, doc]);
   const save = async () => {
     if (!doc) return;
-    await frappeApi.update('OG Task', { name: doc.name, task_name: name, start_date: start||null, end_date: end||null, fields: JSON.stringify(fields) });
-    onUpdate();
-    onClose();
+    await frappeApi.update('OG Task', {
+      name: doc.name, task_name: name,
+      start_date: start || null, end_date: end || null,
+      fields: JSON.stringify(fields),
+    });
+    onSaved(); onClose();
   };
+  // Show every display_column even if absent from fields, so user can add values
+  const fieldKeys = Array.from(new Set([...displayColumns, ...Object.keys(fields)]));
   return (
-    <div style={{position:'fixed',right:0,top:56,bottom:0,width:340,borderLeft:'1px solid var(--line)',background:'var(--surface)',zIndex:10,padding:16,display:'flex',flexDirection:'column',gap:12,overflow:'auto'}}>
-      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}><h3 style={{margin:0}}>Edit Task</h3><button className="btn btn-ghost" onClick={onClose}>Close</button></div>
+    <div className="side-panel">
+      <div className="side-panel-head"><h3>Edit task</h3><button className="btn btn-ghost" onClick={onClose}>Close</button></div>
       <div className="form"><label>Name<input value={name} onChange={e=>setName(e.target.value)} /></label></div>
-      <div className="form"><label>Start<input type="date" value={start} onChange={e=>setStart(e.target.value)} /></label></div>
-      <div className="form"><label>End<input type="date" value={end} onChange={e=>setEnd(e.target.value)} /></label></div>
-      {Object.entries(fields).map(([k,v])=> (
-        <div key={k} className="form"><label>{k}<input value={v||''} onChange={e=>setFields({...fields,[k]:e.target.value})} /></label></div>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+        <div className="form"><label>Start<input type="date" value={start} onChange={e=>setStart(e.target.value)} /></label></div>
+        <div className="form"><label>End<input type="date" value={end} onChange={e=>setEnd(e.target.value)} /></label></div>
+      </div>
+      {fieldKeys.map(k => (
+        <div key={k} className="form"><label>{k}<input value={fields[k] ?? ''} onChange={e=>setFields({...fields,[k]:e.target.value})} /></label></div>
       ))}
+      {!doc && <div style={{color:'var(--text-muted)',fontSize:12}}>Generated group — not persisted. Edit underlying leaves to change.</div>}
       <div style={{marginTop:'auto',display:'flex',gap:8,justifyContent:'flex-end'}}>
-        <button className="btn btn-primary" onClick={save}>Save</button>
+        <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+        <button className="btn btn-primary" onClick={save} disabled={!doc}>Save</button>
       </div>
     </div>
   );
@@ -410,8 +795,97 @@ function SettingsScreen({ user }: { user: string }) {
   return (
     <div className="page">
       <div className="page-head"><h1>Settings</h1></div>
-      <div className="card"><strong>User</strong><span>{user}</span></div>
-      <div className="card"><button className="btn btn-ghost" onClick={()=>{window.location.href='/app';}}>Go to Desk</button></div>
+      <div className="card"><strong>Signed in as</strong><span>{user}</span></div>
+      <div className="card"><button className="btn btn-ghost" onClick={()=>{window.location.href='/app';}}>Go to Frappe Desk</button></div>
+    </div>
+  );
+}
+
+/* ---------- Share / Export mode ---------- */
+function SharePage({ snapshot }: { snapshot: any }) {
+  const tasks: TaskDoc[] = snapshot.tasks || [];
+  const template: TemplateDoc | undefined = snapshot.template;
+  const styleCfg: StyleConfig = snapshot.style || {};
+  const displayColumns: string[] = snapshot.displayColumns || safeJson<string[]>(template?.display_columns, []);
+  const nodes = useMemo(()=>rollupTaskTree(toNodes(tasks)),[tasks]);
+  const docById = useMemo(()=>Object.fromEntries(tasks.map(t=>[t.name,t])) as Record<string,TaskDoc>,[tasks]);
+  const ordered = useMemo(() => {
+    const childrenOf = new Map<string|null, TaskNode[]>();
+    for (const n of nodes) {
+      const a = childrenOf.get(n.parentId) || [];
+      a.push(n);
+      childrenOf.set(n.parentId, a);
+    }
+    const out: Array<TaskNode & {depth:number}> = [];
+    function walk(pid: string|null, depth: number) {
+      for (const c of childrenOf.get(pid) || []) { out.push({...c, depth}); walk(c.id, depth+1); }
+    }
+    walk(null, 0);
+    return out;
+  }, [nodes]);
+  const dated = ordered.filter(n => n.rollupStartDate || n.startDate);
+  const hasDates = dated.length > 0;
+  const dates = useMemo(() => {
+    if (!hasDates) { const t=new Date(); return {start:addDays(t,-15), end:addDays(t,45)}; }
+    const starts = dated.map(n=>n.rollupStartDate||n.startDate).filter(Boolean) as string[];
+    const ends = dated.map(n=>n.rollupEndDate||n.endDate||n.startDate).filter(Boolean) as string[];
+    const s = new Date(`${starts.reduce((a,b)=>a<b?a:b)}T00:00:00Z`);
+    const e = new Date(`${ends.reduce((a,b)=>a>b?a:b)}T00:00:00Z`);
+    return {start: addDays(s,-7), end: addDays(e,7)};
+  }, [dated, hasDates]);
+  const pxPerDay = 4;
+  const totalDays = Math.max(1, daysBetween(dates.start, dates.end));
+  const w = totalDays * pxPerDay;
+  return (
+    <div className="gantt-screen share" data-theme={styleCfg.canvas==='dark'?'dark':'light'} style={{fontFamily: styleCfg.font?`${styleCfg.font}, ui-sans-serif`:undefined}}>
+      <div className="gantt-toolbar"><strong>{styleCfg.header || 'Shared Gantt'}</strong><span style={{marginLeft:'auto',color:'var(--text-muted)',fontSize:12}}>Read-only snapshot</span></div>
+      <div className="gantt-body">
+        <div className="gantt-sidebar">
+          <div className="gantt-sidebar-head" style={{gridTemplateColumns:`minmax(180px,1fr) ${displayColumns.map(()=>'minmax(80px,140px)').join(' ')}`}}>
+            <span>Task</span>{displayColumns.map(c=><span key={c}>{c}</span>)}
+          </div>
+          <div className="gantt-sidebar-body">
+            {ordered.map(n => {
+              const f = fieldsOf(docById[n.id]);
+              return (
+                <div key={n.id} className={`task-row ${n.taskType==='group'?'is-group':''}`} style={{gridTemplateColumns:`minmax(180px,1fr) ${displayColumns.map(()=>'minmax(80px,140px)').join(' ')}`, paddingLeft:`${8+n.depth*16}px`}}>
+                  <span className="task-name">{n.name}</span>
+                  {displayColumns.map(c=><span key={c} className="cell">{f[c]!=null&&f[c]!==''?String(f[c]):<span className="dim">—</span>}</span>)}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+        <div className="gantt-canvas">
+          {hasDates && <div className="gantt-time-header" style={{width:w}}><div className="time-row months">{renderMonthSpans(dates.start, totalDays, pxPerDay)}</div></div>}
+          <div className="gantt-rows" style={{width:w}}>
+            {ordered.map(n => {
+              const ds = n.rollupStartDate || n.startDate;
+              const de = n.rollupEndDate || n.endDate || ds;
+              if (!ds) return <div key={n.id} className="task-row canvas" />;
+              const s = new Date(`${ds}T00:00:00Z`);
+              const e = new Date(`${de}T00:00:00Z`);
+              const left = daysBetween(dates.start, s) * pxPerDay;
+              const bw = Math.max(3, (daysBetween(s,e)+1)*pxPerDay);
+              const isGroup = n.taskType==='group';
+              let bg = isGroup ? (styleCfg.colors?.group || '#0f172a') : (styleCfg.colors?.leaf || '#2563eb');
+              if (!isGroup && styleCfg.status_field && styleCfg.colors_by_status) {
+                const sv = fieldsOf(docById[n.id])[styleCfg.status_field];
+                const c = sv != null ? styleCfg.colors_by_status[String(sv)] : undefined;
+                if (c) bg = c;
+              }
+              return (
+                <div key={n.id} className="task-row canvas">
+                  <div className="bar" style={{left, width: bw, background: bg, opacity: isGroup?0.6:1}}>
+                    <strong>{n.name}</strong>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+      {styleCfg.footer && <div className="footer-text">{styleCfg.footer}</div>}
     </div>
   );
 }
