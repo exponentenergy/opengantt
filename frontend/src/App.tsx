@@ -42,6 +42,25 @@ function sortBySortOrder(a: TaskDoc, b: TaskDoc) {
   return (a.sort_order ?? 0) - (b.sort_order ?? 0);
 }
 
+async function copyToClipboard(text: string): Promise<boolean> {
+  // Modern API: only works in secure contexts (https / localhost).
+  if (typeof navigator !== 'undefined' && navigator.clipboard && (window as any).isSecureContext) {
+    try { await navigator.clipboard.writeText(text); return true; } catch { /* fall through */ }
+  }
+  // Fallback for http://hostname:port etc.: dummy textarea + execCommand
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.focus(); ta.select();
+    const ok = document.execCommand('copy');
+    document.body.removeChild(ta);
+    return ok;
+  } catch { return false; }
+}
+
 /* ---------- Toast (module-level emitter, no provider) ---------- */
 type ToastKind = 'success' | 'error' | 'info';
 let _toastEmit: ((msg: string, kind?: ToastKind) => void) | null = null;
@@ -795,7 +814,7 @@ function GanttEditorScreen({ name, onBack }: { name: string | null; onBack: () =
             <p style={{margin:0,color:'var(--text-muted)',fontSize:12}}>This is a frozen snapshot — future edits do not affect it. Re-share to publish a new version.</p>
             <input value={shareUrl} readOnly onFocus={e=>e.target.select()} style={{width:'100%'}} />
             <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}>
-              <button className="btn btn-primary" onClick={()=>{navigator.clipboard.writeText(shareUrl);setShowShare(false);}}>Copy</button>
+              <button className="btn btn-primary" onClick={()=>{ copyToClipboard(shareUrl).then(ok => { toast(ok ? 'Link copied to clipboard' : 'Couldn’t copy — select the URL above and copy manually', ok?'success':'error'); if (ok) setShowShare(false); }); }}>Copy</button>
               <button className="btn btn-ghost" onClick={()=>setShowShare(false)}>Close</button>
             </div>
           </div>
