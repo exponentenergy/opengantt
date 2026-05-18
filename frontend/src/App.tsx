@@ -478,6 +478,7 @@ function GanttsScreen({ onOpen }: { onOpen: (n: string) => void }) {
   const [templates, setTemplates] = useState<TemplateDoc[]>([]);
   const [selTemplate, setSelTemplate] = useState('');
   const [preview, setPreview] = useState<ParsedTask[] | null>(null);
+  const [pickedFile, setPickedFile] = useState<File | null>(null);
   const [newName, setNewName] = useState('');
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('');
@@ -501,6 +502,7 @@ function GanttsScreen({ onOpen }: { onOpen: (n: string) => void }) {
   }, [items, filter, templateFilter, sort]);
   const onUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0]; if (!f) return;
+    setPickedFile(f);
     const reader = new FileReader();
     reader.onload = () => {
       const data = reader.result;
@@ -525,9 +527,14 @@ function GanttsScreen({ onOpen }: { onOpen: (n: string) => void }) {
     try {
       const g = await frappeApi.create('OG Gantt', { name: newName, template: selTemplate });
       const r: any = await frappeApi.parseUpload({ gantt: g.name, tasks: preview });
+      // Attach the original source file so Re-import works later. Non-fatal if it fails.
+      if (pickedFile) {
+        try { await frappeApi.uploadFile(pickedFile, 'OG Gantt', g.name, 'source_file'); }
+        catch (uploadErr: any) { toast(`Tasks saved, but source file attach failed: ${uploadErr?.message || 'unknown'} — Re-import won't be available.`, 'info'); }
+      }
       toast(`Gantt "${newName}" created (${r?.message?.count ?? preview.length} tasks)`);
     } catch (e: any) { toast(e?.message || 'Failed to create Gantt', 'error'); return; }
-    setShowNew(false); setPreview(null); setNewName(''); setSelTemplate(''); refresh();
+    setShowNew(false); setPreview(null); setPickedFile(null); setNewName(''); setSelTemplate(''); refresh();
   };
   return (
     <div className="page">
@@ -566,7 +573,7 @@ function GanttsScreen({ onOpen }: { onOpen: (n: string) => void }) {
             </div>
           )}
           <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}>
-            <button className="btn btn-ghost" onClick={()=>{setShowNew(false);setPreview(null);}}>Cancel</button>
+            <button className="btn btn-ghost" onClick={()=>{setShowNew(false);setPreview(null);setPickedFile(null);}}>Cancel</button>
             <button className="btn btn-primary" onClick={saveGantt} disabled={!preview||!newName.trim()}>Save Gantt</button>
           </div>
         </div>
@@ -814,8 +821,13 @@ function GanttEditorScreen({ name, onBack }: { name: string | null; onBack: () =
         </label>
         <button className="btn btn-primary" onClick={()=>setNewTaskOpen({parent: null})}>+ New Task</button>
         <button className="btn btn-ghost" onClick={share}>Share</button>
-        <button className="btn btn-ghost" onClick={exportHtml}>Export HTML</button>
-        <button className="btn btn-ghost" onClick={reimport}>Re-import</button>
+        <button className="btn btn-ghost" onClick={exportHtml} title="Download a standalone HTML snapshot of this Gantt that works offline">Export HTML</button>
+        <button className="btn btn-ghost" onClick={reimport} disabled={!gantt?.source_file}
+                title={gantt?.source_file
+                  ? "Re-parse the attached source file against the current template. Replaces all tasks — side-panel edits will be lost."
+                  : "No source file attached to this Gantt. Re-create it via New Gantt to enable Re-import."}>
+          Re-import
+        </button>
       </div>
       <div className="gantt-body">
         <div className="gantt-sidebar">

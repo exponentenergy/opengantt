@@ -52,6 +52,29 @@ async function rest(doctype: string, action: string, body?: any) {
   return data.data;
 }
 
+async function uploadFile(file: File, doctype: string, docname: string, fieldname = "source_file"): Promise<string> {
+  const form = new FormData();
+  form.append("file", file, file.name);
+  form.append("doctype", doctype);
+  form.append("docname", docname);
+  form.append("fieldname", fieldname);
+  form.append("is_private", "1");
+  const headers: Record<string, string> = {};
+  const tok = (window as any).csrf_token;
+  if (tok && tok !== "{{ csrf_token }}") headers["X-Frappe-CSRF-Token"] = tok;
+  const res = await fetch(`${BASE}/api/method/upload_file`, {
+    method: "POST",
+    headers,
+    credentials: "include",
+    body: form,
+  });
+  if (!res.ok) throw new Error(await parseError(res));
+  const data = await res.json();
+  const file_url = data?.message?.file_url || data?.message?.file_name;
+  if (!file_url) throw new Error("upload_file returned no file_url");
+  return file_url as string;
+}
+
 export const frappeApi = {
   getUser: () => api("frappe.auth.get_logged_user"),
   list: (d: string) => rest(d, "list"),
@@ -59,6 +82,7 @@ export const frappeApi = {
   read: (d: string, name: string) => rest(d, "read", name),
   update: (d: string, body: any) => rest(d, "update", body),
   delete: (d: string, name: string) => rest(d, "delete", name),
+  uploadFile,
   parseUpload: (body: any) => api("opengantt.api.parse_upload.parse_upload", body),
   publishShare: (body: any) => api("opengantt.api.publish_share.publish_share", body),
   duplicateStyle: (body: any) => api("opengantt.api.duplicate_style.duplicate_style", body),
