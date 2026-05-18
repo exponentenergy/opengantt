@@ -523,7 +523,7 @@ function GanttsScreen({ onOpen }: { onOpen: (n: string) => void }) {
   const saveGantt = async () => {
     if (!newName.trim() || !selTemplate || !preview) return;
     try {
-      const g = await frappeApi.create('OG Gantt', { name: newName, template: selTemplate, parsed_at: new Date().toISOString() });
+      const g = await frappeApi.create('OG Gantt', { name: newName, template: selTemplate });
       const r: any = await frappeApi.parseUpload({ gantt: g.name, tasks: preview });
       toast(`Gantt "${newName}" created (${r?.message?.count ?? preview.length} tasks)`);
     } catch (e: any) { toast(e?.message || 'Failed to create Gantt', 'error'); return; }

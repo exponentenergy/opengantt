@@ -50,4 +50,7 @@ def parse_upload():
     if not gantt_name:
         frappe.throw("gantt is required")
     count, _ = bulk_insert_tasks(gantt_name, tasks)
+    # Stamp parsed_at server-side (MySQL only accepts 'YYYY-MM-DD HH:MM:SS').
+    frappe.db.set_value("OG Gantt", gantt_name, "parsed_at", frappe.utils.now_datetime())
+    frappe.db.commit()
     return {"ok": True, "count": count}
