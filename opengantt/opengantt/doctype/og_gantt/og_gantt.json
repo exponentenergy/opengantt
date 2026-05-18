@@ -9,9 +9,28 @@
     {
       "fieldname": "template",
       "fieldtype": "Link",
-      "label": "Template",
+      "label": "Created from template",
       "options": "OG Template",
-      "reqd": 1
+      "allow_on_submit": 0,
+      "set_only_once": 1
+    },
+    {
+      "fieldname": "field_map",
+      "fieldtype": "Long Text",
+      "label": "Field Map",
+      "description": "Stamped JSON mapping copied from the creation template"
+    },
+    {
+      "fieldname": "grouping",
+      "fieldtype": "Long Text",
+      "label": "Grouping",
+      "description": "Stamped JSON ordered list of source column names for grouping"
+    },
+    {
+      "fieldname": "display_columns",
+      "fieldtype": "Long Text",
+      "label": "Display Columns",
+      "description": "Stamped JSON list of columns to display on Gantt rows"
     },
     {
       "fieldname": "active_style",

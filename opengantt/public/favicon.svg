@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="OpenGantt">
+  <rect width="64" height="64" rx="14" fill="#0a0a0b"/>
+  <rect x="10" y="13" width="34" height="8" rx="2.5" fill="#ff5d3a"/>
+  <rect x="18" y="28" width="36" height="8" rx="2.5" fill="#5fa881"/>
+  <rect x="14" y="43" width="24" height="8" rx="2.5" fill="#d9a64a"/>
+  <path d="M10 55h44" stroke="#ededee" stroke-opacity=".32" stroke-width="2" stroke-linecap="round"/>
+</svg>

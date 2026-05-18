@@ -64,12 +64,10 @@ export function parseSheet(rows: Record<string, any>[], template: TemplateConfig
     };
 
     // Collect unmapped non-grouping fields onto the leaf
-    const groupingSet = new Set(grouping);
     for (const [col, val] of Object.entries(row)) {
       if (val === null || val === undefined || val === "") continue;
       const mappedKey = Object.entries(field_map).find(([, v]) => v === col)?.[0];
       if (canonicalKeys.includes(mappedKey || "")) continue;
-      if (groupingSet.has(col)) continue;
       leaf.fields[col] = val instanceof Date ? toIsoDate(val) : val;
     }
 

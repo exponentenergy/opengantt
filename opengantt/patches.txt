@@ -4,4 +4,5 @@
 
 [post_model_sync]
 # Patches added in this section will be executed after doctypes are migrated
+opengantt.patches.migrate_schema_to_gantt
 opengantt.patches.seed_examples

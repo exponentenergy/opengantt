@@ -7,7 +7,7 @@ from opengantt.api.parse_upload import bulk_insert_tasks
 
 @frappe.whitelist()
 def reimport():
-    """Re-parse the source_file attached to an OG Gantt against its template.
+    """Re-parse the source_file attached to an OG Gantt against its stamped schema.
 
     Body: { "gantt": "<gantt name>" }. Returns { ok, count }.
     Replaces all existing tasks for that Gantt.
@@ -20,12 +20,10 @@ def reimport():
     gantt = frappe.get_doc("OG Gantt", gantt_name)
     if not gantt.source_file:
         frappe.throw("No source_file attached to this Gantt — re-upload via New Gantt flow.")
-    if not gantt.template:
-        frappe.throw("Gantt has no template")
-
-    template = frappe.get_doc("OG Template", gantt.template)
-    field_map = json.loads(template.field_map or "{}")
-    grouping = json.loads(template.grouping or "[]")
+    field_map = json.loads(gantt.field_map or "{}")
+    grouping = json.loads(gantt.grouping or "[]")
+    if not field_map:
+        frappe.throw("Gantt has no stamped field_map. Run the OpenGantt schema migration.")
 
     rows = _read_source(gantt.source_file)
     tasks = _build_tasks(rows, field_map, grouping)
@@ -121,7 +119,7 @@ def _build_tasks(rows, field_map, grouping):
         if leaf_name is None or leaf_name == "":
             continue
         fields = {k: v for k, v in row.items() if k not in (
-            name_col, start_col, end_col, a_start_col, a_end_col, *grouping
+            name_col, start_col, end_col, a_start_col, a_end_col
         ) and v not in (None, "")}
         # coerce non-serialisable types to strings
         fields = {k: (v if isinstance(v, (str, int, float, bool)) else str(v)) for k, v in fields.items()}

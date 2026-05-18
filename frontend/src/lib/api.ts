@@ -96,6 +96,7 @@ export const frappeApi = {
   delete: (d: string, name: string) => rest(d, "delete", name),
   uploadFile,
   parseUpload: (body: any) => api("opengantt.api.parse_upload.parse_upload", body),
+  rebucketGantt: (body: any) => api("opengantt.api.parse_upload.rebucket_gantt", body),
   publishShare: (body: any) => api("opengantt.api.publish_share.publish_share", body),
   duplicateStyle: (body: any) => api("opengantt.api.duplicate_style.duplicate_style", body),
   reimport: (body: any) => api("opengantt.api.reimport.reimport", body),

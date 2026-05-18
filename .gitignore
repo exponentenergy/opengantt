@@ -13,5 +13,6 @@ node_modules/
 .vscode/
 .idea/
 *.iml
+.claude/
 opengantt/public/opengantt/
 !opengantt/public/.gitkeep

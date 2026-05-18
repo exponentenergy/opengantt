@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { rollupTaskTree, TaskNode } from './packages/core';
 import { parseSheet, TemplateConfig, ParsedTask } from './packages/parser';
 import { frappeApi } from './lib/api';
@@ -7,7 +7,7 @@ import Papa from 'papaparse';
 
 type Screen = 'templates' | 'templateEditor' | 'gantts' | 'ganttEditor' | 'settings';
 type TemplateDoc = { name: string; description?: string; field_map?: string; grouping?: string; display_columns?: string; owner?: string };
-type GanttDoc = { name: string; template: string; active_style?: string; source_file?: string; parsed_at?: string; owner?: string };
+type GanttDoc = { name: string; template?: string | null; field_map?: string; grouping?: string; display_columns?: string; active_style?: string; source_file?: string; parsed_at?: string; owner?: string };
 type TaskDoc = { name: string; gantt: string; parent_task?: string; task_name: string; kind: 'group' | 'leaf'; start_date?: string; end_date?: string; actual_start?: string; actual_end?: string; sort_order: number; fields?: string };
 type StyleDoc = { name: string; template: string; config?: string };
 type StyleConfig = {
@@ -21,15 +21,18 @@ type StyleConfig = {
 };
 
 const FONT_OPTIONS = ['Inter', 'system-ui', 'Georgia', 'Helvetica', 'JetBrains Mono'];
+const STATUS_ORDER = ['scope', 'planned', 'prog', 'in-progress', 'dev', 'uat', 'migr', 'migration', 'golive', 'done', 'block', 'blocked'];
 
 function safeJson<T>(s: string | undefined, fallback: T): T { try { return s ? JSON.parse(s) : fallback; } catch { return fallback; } }
 function toNodes(tasks: TaskDoc[]): TaskNode[] {
   return tasks.map((t) => ({
     id: t.name, parentId: t.parent_task || null, path: [t.name], depth: 0, wbsCode: '',
-    name: t.task_name, owner: '', status: 'planned', priority: 'medium', taskType: t.kind,
+    name: t.task_name, owner: String(fieldsOf(t).Owner || fieldsOf(t)['Data pack Owner'] || fieldsOf(t).owner || ''),
+    status: normalizeStatus(fieldsOf(t).Status || fieldsOf(t).Phase || fieldsOf(t).status),
+    priority: 'medium', taskType: t.kind,
     startDate: t.start_date || '', endDate: t.end_date || '',
     actualStartDate: t.actual_start, actualEndDate: t.actual_end,
-    progress: 0, color: '#2563eb', resourceLoad: 0,
+    progress: progressOf(t), color: '#2563eb', resourceLoad: 0,
   }));
 }
 function addDays(d: Date, days: number) { const r = new Date(d); r.setDate(r.getDate() + days); return r; }
@@ -40,6 +43,48 @@ function fieldsOf(t: TaskDoc | undefined): Record<string, any> {
 }
 function sortBySortOrder(a: TaskDoc, b: TaskDoc) {
   return (a.sort_order ?? 0) - (b.sort_order ?? 0);
+}
+function normalizeStatus(value: any): any {
+  const s = String(value || 'planned').toLowerCase();
+  if (s.includes('block')) return 'blocked';
+  if (s.includes('risk')) return 'at-risk';
+  if (s.includes('done') || s.includes('complete') || s.includes('live')) return 'done';
+  if (s.includes('prog') || s.includes('migr') || s.includes('dev') || s.includes('uat')) return 'in-progress';
+  return 'planned';
+}
+function statusClass(value: any): string {
+  const s = String(value || '').toLowerCase();
+  if (s.includes('block')) return 'block';
+  if (s.includes('go') || s.includes('done') || s.includes('complete')) return 'golive';
+  if (s.includes('migr')) return 'migr';
+  if (s.includes('uat') || s.includes('test')) return 'uat';
+  if (s.includes('dev') || s.includes('build')) return 'dev';
+  if (s.includes('prog')) return 'prog';
+  if (s.includes('scope') || s.includes('plan')) return 'scope';
+  return 'scope';
+}
+function statusLabel(value: any): string {
+  const raw = String(value || 'Scope').trim();
+  return raw.length > 13 ? raw.slice(0, 12) + '…' : raw;
+}
+function progressOf(t: TaskDoc | undefined): number {
+  const f = fieldsOf(t);
+  const raw = f.Progress ?? f.progress ?? f['% Complete'] ?? f.Complete ?? 0;
+  const n = Number(String(raw).replace('%', ''));
+  return Number.isFinite(n) ? Math.max(0, Math.min(100, n)) : 0;
+}
+function ownerOf(t: TaskDoc | undefined): string {
+  const f = fieldsOf(t);
+  return String(f.Owner || f['Data pack Owner'] || f.owner || f.Assignee || '—');
+}
+function initials(name: string): string {
+  if (!name || name === '—') return '—';
+  return name.split(/\s+/).filter(Boolean).slice(0, 2).map(p => p[0]?.toUpperCase()).join('');
+}
+function durationDays(n: TaskNode): number {
+  const s = n.rollupStartDate || n.startDate;
+  const e = n.rollupEndDate || n.endDate || s;
+  return s ? Math.max(1, daysBetween(new Date(`${s}T00:00:00Z`), new Date(`${e}T00:00:00Z`)) + 1) : 0;
 }
 
 async function copyToClipboard(text: string): Promise<boolean> {
@@ -231,11 +276,11 @@ function TemplatesScreen({ onEdit }: { onEdit: (n: string) => void }) {
               <div style={{display:'flex',gap:8}}>
                 <button className="btn btn-ghost" onClick={()=>onEdit(t.name)}>Edit</button>
                 <button className="btn btn-danger" onClick={async ()=>{
-                  if(!confirm(`Delete template "${t.name}"?\n\nThis also deletes every Gantt using this template, plus all of those Gantts' tasks, shares, and styles. This cannot be undone.`)) return;
+                  if(!confirm(`Delete template "${t.name}"?\n\nExisting Gantts will keep working. Their "created from template" link will be cleared; tasks and shares are untouched.`)) return;
                   try {
                     const r: any = await frappeApi.deleteTemplate(t.name);
-                    const n = r?.message?.deleted_gantts ?? 0;
-                    toast(`Template "${t.name}" deleted${n?` (+ ${n} Gantt${n>1?'s':''})`:''}`);
+                    const n = r?.message?.detached_gantts ?? 0;
+                    toast(`Template "${t.name}" deleted${n?` (${n} Gantt${n>1?'s':''} detached)`:''}`);
                     refresh();
                   } catch(e:any){ toast(e?.message || 'Delete failed', 'error'); }
                 }}>Delete</button>
@@ -317,8 +362,11 @@ function TemplateEditorScreen({ name, onBack }: { name: string | null; onBack: (
   return (
     <div className="page">
       <div className="page-head">
-        <div><h1>{doc.name}</h1><p>{doc.description || 'Template'}</p></div>
+        <div><h1>{doc.name}</h1><p>{doc.description || 'Preset for creating new Gantts'}</p></div>
         <div style={{display:'flex',gap:8}}><button className="btn btn-ghost" onClick={onBack}>Cancel</button><button className="btn btn-primary" onClick={save}>Save changes</button></div>
+      </div>
+      <div className="note-card">
+        Templates are presets. Changes here affect only Gantts created after this save; existing Gantts keep their own stamped schema.
       </div>
       <div className="card" style={{display:'grid',gap:12}}>
         <h3 style={{margin:0}}>Sample file</h3>
@@ -529,7 +577,14 @@ function GanttsScreen({ onOpen }: { onOpen: (n: string) => void }) {
   const saveGantt = async () => {
     if (!newName.trim() || !selTemplate || !preview) return;
     try {
-      const g = await frappeApi.create('OG Gantt', { name: newName, template: selTemplate });
+      const t = templates.find(x=>x.name===selTemplate);
+      const g = await frappeApi.create('OG Gantt', {
+        name: newName,
+        template: selTemplate,
+        field_map: t?.field_map || '{}',
+        grouping: t?.grouping || '[]',
+        display_columns: t?.display_columns || '[]',
+      });
       const r: any = await frappeApi.parseUpload({ gantt: g.name, tasks: preview });
       // Attach the original source file so Re-import works later. Non-fatal if it fails.
       if (pickedFile) {
@@ -607,35 +662,8 @@ function GanttsScreen({ onOpen }: { onOpen: (n: string) => void }) {
   );
 }
 
-function useTaskTree(tasks: TaskDoc[], groupBy: string | null) {
-  // If groupBy is set, ignore stored parent_task and re-group leaves by fields[groupBy]
-  return useMemo(() => {
-    if (!groupBy || groupBy === '__stored__') {
-      return rollupTaskTree(toNodes(tasks));
-    }
-    if (groupBy === '__flat__') {
-      const flat = tasks.filter(t=>t.kind==='leaf').map(t => ({ ...t, parent_task: undefined }));
-      return rollupTaskTree(toNodes(flat));
-    }
-    // Re-group by field value
-    const leaves = tasks.filter(t=>t.kind==='leaf');
-    const groupMap = new Map<string, TaskDoc>();
-    const out: TaskDoc[] = [];
-    for (const t of leaves) {
-      const value = String(fieldsOf(t)[groupBy] ?? '—');
-      const key = `__grp__${groupBy}__${value}`;
-      if (!groupMap.has(key)) {
-        const g: TaskDoc = {
-          name: key, gantt: t.gantt, task_name: value, kind: 'group',
-          sort_order: 0, parent_task: undefined,
-        };
-        groupMap.set(key, g);
-        out.push(g);
-      }
-      out.push({ ...t, parent_task: key });
-    }
-    return rollupTaskTree(toNodes(out));
-  }, [tasks, groupBy]);
+function useTaskTree(tasks: TaskDoc[]) {
+  return useMemo(() => rollupTaskTree(toNodes(tasks)), [tasks]);
 }
 
 function GanttEditorScreen({ name, onBack }: { name: string | null; onBack: () => void }) {
@@ -648,7 +676,7 @@ function GanttEditorScreen({ name, onBack }: { name: string | null; onBack: () =
   const [newTaskOpen, setNewTaskOpen] = useState<{ parent: string | null } | null>(null);
   const [zoom, setZoom] = useState<'day'|'week'|'month'|'quarter'>('month');
   const [filter, setFilter] = useState('');
-  const [groupBy, setGroupBy] = useState<string>('__stored__');
+  const [schemaOpen, setSchemaOpen] = useState<'template'|'grouping'|'columns'|null>(null);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [showShare, setShowShare] = useState(false);
   const [shareUrl, setShareUrl] = useState('');
@@ -661,18 +689,28 @@ function GanttEditorScreen({ name, onBack }: { name: string | null; onBack: () =
   useEffect(() => {
     if (!gantt) return;
     setSelStyle(gantt.active_style || '');
-    frappeApi.read('OG Template', gantt.template).then((r:any)=>setTemplate(r));
-    frappeApi.list('OG Style').then((r:any)=>setStyles((r||[]).filter((s:StyleDoc)=>s.template===gantt.template)));
+    if (gantt.template) frappeApi.read('OG Template', gantt.template).then((r:any)=>setTemplate(r)).catch(()=>setTemplate(null));
+    else setTemplate(null);
+    frappeApi.list('OG Style').then((r:any)=>setStyles((r||[]).filter((s:StyleDoc)=>!gantt.template || s.template===gantt.template)));
   }, [gantt]);
 
   const styleCfg = useMemo<StyleConfig>(() => {
     const s = styles.find(x=>x.name===selStyle);
     return s ? safeJson(s.config, {}) : {};
   }, [styles, selStyle]);
-  const displayColumns: string[] = useMemo(() => safeJson<string[]>(template?.display_columns, []), [template]);
-  const grouping: string[] = useMemo(() => safeJson<string[]>(template?.grouping, []), [template]);
+  const fieldMap = useMemo(() => safeJson<Record<string,string>>(gantt?.field_map, {}), [gantt]);
+  const displayColumns: string[] = useMemo(() => safeJson<string[]>(gantt?.display_columns, []), [gantt]);
+  const grouping: string[] = useMemo(() => safeJson<string[]>(gantt?.grouping, []), [gantt]);
+  const allSchemaColumns = useMemo(() => {
+    const set = new Set<string>();
+    Object.values(fieldMap).forEach(v => v && set.add(v));
+    grouping.forEach(v => set.add(v));
+    displayColumns.forEach(v => set.add(v));
+    tasks.forEach(t => Object.keys(fieldsOf(t)).forEach(k => set.add(k)));
+    return Array.from(set).sort((a,b)=>a.localeCompare(b));
+  }, [fieldMap, grouping, displayColumns, tasks]);
 
-  const nodes = useTaskTree(tasks, groupBy);
+  const nodes = useTaskTree(tasks);
   const docById = useMemo(() => Object.fromEntries(tasks.map(t=>[t.name, t])) as Record<string, TaskDoc>, [tasks]);
 
   // Apply filter + collapse
@@ -714,19 +752,6 @@ function GanttEditorScreen({ name, onBack }: { name: string | null; onBack: () =
   const totalDays = Math.max(1, daysBetween(dates.start, dates.end));
   const timelineWidth = totalDays * pxPerDay;
 
-  // Synchronized vertical scroll
-  const sidebarRef = useRef<HTMLDivElement>(null);
-  const canvasRef = useRef<HTMLDivElement>(null);
-  const syncing = useRef(false);
-  const syncFrom = (src: 'sidebar'|'canvas') => () => {
-    if (syncing.current) return;
-    const a = sidebarRef.current, b = canvasRef.current;
-    if (!a || !b) return;
-    syncing.current = true;
-    if (src==='sidebar') b.scrollTop = a.scrollTop; else a.scrollTop = b.scrollTop;
-    requestAnimationFrame(() => { syncing.current = false; });
-  };
-
   const toggleCollapse = (id: string) => {
     const next = new Set(collapsed);
     if (next.has(id)) next.delete(id); else next.add(id);
@@ -735,7 +760,7 @@ function GanttEditorScreen({ name, onBack }: { name: string | null; onBack: () =
 
   const share = async () => {
     if (!gantt) return;
-    const snapshot = { tasks, template, style: styleCfg, displayColumns };
+    const snapshot = { tasks, gantt, template, style: styleCfg, displayColumns };
     try {
       const r: any = await frappeApi.publishShare({ gantt: gantt.name, snapshot });
       const url = r?.message?.url || r?.url;
@@ -754,7 +779,7 @@ function GanttEditorScreen({ name, onBack }: { name: string | null; onBack: () =
       ]);
       if (!jsRes.ok || !cssRes.ok) throw new Error('Couldn’t load bundle for inlining');
       const [js, css] = await Promise.all([jsRes.text(), cssRes.text()]);
-      const payload = { tasks, template, style: styleCfg, displayColumns };
+      const payload = { tasks, gantt, template, style: styleCfg, displayColumns };
       const payloadJson = JSON.stringify(payload).replace(/</g, '\\u003c');
       const safeJs = js.replace(/<\/script>/gi, '<\\/script>');
       const html =
@@ -793,137 +818,143 @@ function GanttEditorScreen({ name, onBack }: { name: string | null; onBack: () =
       catch (e:any){ toast(e?.message || 'Failed to update style', 'error'); }
     }
   };
+  const saveGanttSchema = async (updates: Partial<Pick<GanttDoc, 'field_map'|'grouping'|'display_columns'>>, rebucket = false, rebucketArgs: Record<string, any> = {}) => {
+    if (!gantt) return;
+    const next = { ...gantt, ...updates };
+    setGantt(next);
+    try {
+      await frappeApi.update('OG Gantt', { name: gantt.name, ...updates });
+      if (rebucket && updates.grouping) {
+        await frappeApi.rebucketGantt({ gantt: gantt.name, grouping: safeJson<string[]>(updates.grouping, []), ...rebucketArgs });
+        await reload(gantt.name);
+      }
+      toast('Gantt schema saved');
+    } catch (e:any) {
+      toast(e?.message || 'Failed to save schema', 'error');
+      if (name) reload(name);
+    }
+  };
+  const setGroupingColumns = (cols: string[]) => {
+    const nameCol = fieldMap.name;
+    const nameColIndex = nameCol ? cols.indexOf(nameCol) : -1;
+    const hasTaskLevelAfterName = nameColIndex >= 0 && cols.length > nameColIndex + 1;
+    if (hasTaskLevelAfterName) {
+      const leafNameField = cols[cols.length - 1];
+      const nextGrouping = cols.slice(0, -1);
+      saveGanttSchema(
+        { grouping: JSON.stringify(nextGrouping), field_map: JSON.stringify({ ...fieldMap, name: leafNameField }) },
+        true,
+        { leaf_name_field: leafNameField },
+      );
+      toast(`${leafNameField} is the dated task level, so it was set as the task name instead of a repeated group.`, 'info');
+    } else {
+      saveGanttSchema({ grouping: JSON.stringify(cols) }, true);
+    }
+    setSchemaOpen(null);
+  };
+  const setDisplayColumn = (col: string) => {
+    const next = displayColumns.includes(col) ? displayColumns.filter(c => c !== col) : [...displayColumns, col];
+    saveGanttSchema({ display_columns: JSON.stringify(next) });
+  };
+  const setFieldMapValue = (key: string, col: string) => {
+    saveGanttSchema({ field_map: JSON.stringify({ ...fieldMap, [key]: col }) });
+  };
 
   if (loading || !gantt) return <div className="page"><div className="empty-state">Loading Gantt…</div></div>;
 
-  const themeAttr = styleCfg.canvas==='dark' ? 'dark' : 'light';
+  const selectedNode = selectedTask ? nodes.find(n=>n.id===selectedTask) : null;
+  const selectedDoc = selectedTask ? docById[selectedTask] : undefined;
+  const monthTitle = `${dates.start.toLocaleString('default',{month:'long'})} — ${dates.end.toLocaleString('default',{month:'long'})}`;
+  const todayLeft = daysBetween(dates.start, new Date()) * pxPerDay;
+  const pxPerDayText = pxPerDay.toFixed(1);
+  const gridCols = '28px 220px 92px 110px 50px minmax(520px, 1fr)';
   return (
-    <div className="gantt-screen" data-theme={themeAttr} style={{ fontFamily: styleCfg.font ? `${styleCfg.font}, ui-sans-serif, system-ui` : undefined }}>
-      <div className="gantt-toolbar">
-        <button className="btn btn-ghost" onClick={onBack}>← Back</button>
-        <strong style={{fontSize:14}}>{gantt.name}</strong>
-        {styleCfg.header && <span className="header-text">{styleCfg.header}</span>}
-        <input className="searchbox" placeholder="Filter…" value={filter} onChange={e=>setFilter(e.target.value)} />
-        <label className="inline-control">Group by
-          <select value={groupBy} onChange={e=>setGroupBy(e.target.value)}>
-            <option value="__stored__">As imported</option>
-            <option value="__flat__">Flat</option>
-            {grouping.map(g => <option key={g} value={g}>{g}</option>)}
-            {displayColumns.filter(c=>!grouping.includes(c)).map(c => <option key={c} value={c}>{c}</option>)}
-          </select>
-        </label>
-        <label className="inline-control">Zoom
-          <select value={zoom} onChange={e=>setZoom(e.target.value as any)}>
-            <option value="day">Day</option><option value="week">Week</option><option value="month">Month</option><option value="quarter">Quarter</option>
-          </select>
-        </label>
+    <div className="gantt-screen og-dark">
+      <header className="topbar">
+        <button className="btn workspace" onClick={onBack}>
+          <span className="ws-mark">o</span><span className="ws-org">OpenGantt</span><span className="sep">/</span><span className="ws-name">Gantts</span>
+        </button>
+        <div className="gantt-title"><span className="name">{gantt.name}</span><span className="sub">schema stamped · {gantt.template ? `created from ${gantt.template}` : 'source template deleted'}</span></div>
+        <div className="top-actions">
+          <button className="btn" onClick={()=>setNewTaskOpen({parent: null})}>+ New task</button>
+          <button className="btn" onClick={exportHtml}>Export HTML</button>
+          <button className="btn primary" onClick={share}>Share</button>
+        </div>
+      </header>
+
+      <div className="subtoolbar">
+        <button className="btn chip" onClick={()=>setSchemaOpen(schemaOpen==='template'?null:'template')}><span className="lbl">Template</span><span className="val">{gantt.template || 'Deleted'}</span><span className="caret">⌄</span></button>
+        <button className="btn chip" onClick={()=>setSchemaOpen(schemaOpen==='grouping'?null:'grouping')}><span className="lbl">Group by</span><span className="val">{grouping.length ? grouping.join(' → ') : 'None'}</span><span className="caret">⌄</span></button>
+        <button className="btn chip" onClick={()=>setSchemaOpen(schemaOpen==='columns'?null:'columns')}><span className="lbl">Columns</span><span className="val">{displayColumns.length}</span><span className="caret">⌄</span></button>
+        <span className="subt-divider" />
+        <button className="btn" onClick={reimport} disabled={!gantt.source_file}>Re-import</button>
         <label className="inline-control">Style
           <select value={selStyle} onChange={e=>changeStyle(e.target.value)}>
-            <option value="">Default</option>
-            {styles.map(s=><option key={s.name} value={s.name}>{s.name}</option>)}
+            <option value="">Default</option>{styles.map(s=><option key={s.name} value={s.name}>{s.name}</option>)}
           </select>
         </label>
-        <button className="btn btn-primary" onClick={()=>setNewTaskOpen({parent: null})}>+ New Task</button>
-        <button className="btn btn-ghost" onClick={share}>Share</button>
-        <button className="btn btn-ghost" onClick={exportHtml} title="Download a standalone HTML snapshot of this Gantt that works offline">Export HTML</button>
-        <button className="btn btn-ghost" onClick={reimport} disabled={!gantt?.source_file}
-                title={gantt?.source_file
-                  ? "Re-parse the attached source file against the current template. Replaces all tasks — side-panel edits will be lost."
-                  : "No source file attached to this Gantt. Re-create it via New Gantt to enable Re-import."}>
-          Re-import
-        </button>
-      </div>
-      <div className="gantt-body">
-        <div className="gantt-sidebar">
-          <div className="gantt-sidebar-head" style={{gridTemplateColumns: `28px minmax(180px,1fr) ${displayColumns.map(()=>'minmax(80px,140px)').join(' ')}`}}>
-            <span></span><span>Task</span>
-            {displayColumns.map(c => <span key={c}>{c}</span>)}
+        <span className="spacer" />
+        <div className="search"><span>⌕</span><input placeholder="Find task or owner…" value={filter} onChange={e=>setFilter(e.target.value)} /><span className="kbd">⌘K</span></div>
+        <span className="subt-divider" />
+        <div className="btn-group">
+          {(['day','week','month','quarter'] as const).map(z => <button key={z} className={zoom===z?'on':''} onClick={()=>setZoom(z)}>{z[0].toUpperCase()+z.slice(1)}</button>)}
+        </div>
+        {schemaOpen && (
+          <div className="schema-popover">
+            {schemaOpen === 'template' && <SchemaFieldMap fieldMap={fieldMap} columns={allSchemaColumns} onChange={setFieldMapValue} />}
+            {schemaOpen === 'grouping' && <SchemaGrouping grouping={grouping} columns={allSchemaColumns} fieldMap={fieldMap} onApply={setGroupingColumns} />}
+            {schemaOpen === 'columns' && <SchemaColumns columns={allSchemaColumns} selected={displayColumns} onToggle={setDisplayColumn} />}
           </div>
-          <div className="gantt-sidebar-body" ref={sidebarRef} onScroll={syncFrom('sidebar')}>
-            {visible.map(n => {
+        )}
+      </div>
+
+      <div className="editor-shell">
+        <div className="canvas-col">
+          <div className="scale">
+            <div className="scale-left"><div className="range-name">{monthTitle}</div><div className="range">{dates.start.getUTCFullYear()} · {Math.ceil(totalDays/7)} weeks · {totalDays} days</div></div>
+            <div className="scale-right" style={{width: timelineWidth}}><div className="time-row months">{renderMonthSpans(dates.start, totalDays, pxPerDay)}</div><div className="time-row days">{renderDayTicks(dates.start, totalDays, pxPerDay, zoom)}</div></div>
+          </div>
+          <div className="col-head" style={{gridTemplateColumns: gridCols}}>
+            <div></div><div>Task</div><div>Status</div><div>Owner</div><div>Dur</div><div>Timeline <span className="pxday">PX/DAY · {pxPerDayText}</span></div>
+          </div>
+          <div className="rows-wrap">
+            {hasDates && todayLeft >= 0 && todayLeft <= timelineWidth && <div className="today" style={{left: 28+220+92+110+50+todayLeft}} />}
+            {visible.map((n) => {
               const doc = docById[n.id];
               const isGroup = n.taskType === 'group';
-              const fields = fieldsOf(doc);
-              const isCollapsed = collapsed.has(n.id);
-              const statusField = styleCfg.status_field;
+              const f = fieldsOf(doc);
+              const statusValue = f.Status || f.Phase || f.status || (isGroup ? n.rollupStatus : n.status);
+              const sc = statusClass(statusValue);
+              const ds = n.rollupStartDate || n.startDate;
+              const de = n.rollupEndDate || n.endDate || ds;
+              const left = ds ? Math.max(0, daysBetween(dates.start, new Date(`${ds}T00:00:00Z`)) * pxPerDay) : 0;
+              const bw = ds ? Math.max(4, (daysBetween(new Date(`${ds}T00:00:00Z`), new Date(`${de}T00:00:00Z`))+1) * pxPerDay) : 0;
+              if (isGroup) {
+                return <GroupBand key={n.id} node={n} allNodes={nodes} collapsed={collapsed.has(n.id)} onToggle={()=>toggleCollapse(n.id)} left={left} width={bw} gridCols={gridCols} />;
+              }
               return (
-                <div key={n.id}
-                     className={`task-row ${selectedTask===n.id?'selected':''} ${isGroup?'is-group':''}`}
-                     style={{gridTemplateColumns:`28px minmax(180px,1fr) ${displayColumns.map(()=>'minmax(80px,140px)').join(' ')}`, paddingLeft: `${8 + n.depth*16}px`}}
-                     onClick={()=>setSelectedTask(n.id)}>
-                  <span className="caret" onClick={e=>{e.stopPropagation(); if (isGroup) toggleCollapse(n.id);}}>
-                    {isGroup ? (isCollapsed ? '▸' : '▾') : ''}
-                  </span>
-                  <span className="task-name">{n.name}</span>
-                  {displayColumns.map(c => {
-                    const v = fields[c];
-                    const isStatus = statusField && c === statusField && styleCfg.colors_by_status?.[String(v)];
-                    return (
-                      <span key={c} className="cell">
-                        {v != null && v !== '' ? (
-                          isStatus ? <span className="pill" style={{background: styleCfg.colors_by_status![String(v)]}}>{String(v)}</span> : String(v)
-                        ) : <span className="dim">—</span>}
-                      </span>
-                    );
-                  })}
+                <div key={n.id} className={`og-row ${selectedTask===n.id?'selected':''}`} style={{gridTemplateColumns: gridCols}} onClick={()=>setSelectedTask(n.id)}>
+                  <div className="gutter"><div className="depth-rule" /></div>
+                  <div className="cell"><span className="taskname" style={{paddingLeft: Math.max(0, n.depth-1)*18}}>{n.name}</span></div>
+                  <div className="cell"><span className={`pill ${sc}`}><span className={`st-ico ${sc==='golive'?'done':sc}`} />{statusLabel(statusValue)}</span></div>
+                  <div className="cell">{ownerOf(doc) === '—' ? <span className="dim">—</span> : <span className="owner"><span className={`avatar b${(n.depth%6)+1}`}>{initials(ownerOf(doc))}</span><span className="nm">{ownerOf(doc)}</span></span>}</div>
+                  <div className="cell dur">{durationDays(n)}<span className="tail">d</span></div>
+                  <div className="cell timeline-cell"><div className="timeline" style={{width: timelineWidth}}>
+                    {f.stated_start && f.stated_end && <div className="stated" style={{left: daysBetween(dates.start, new Date(`${f.stated_start}T00:00:00Z`))*pxPerDay, width: Math.max(4, daysBetween(new Date(`${f.stated_start}T00:00:00Z`), new Date(`${f.stated_end}T00:00:00Z`))*pxPerDay)}} />}
+                    {ds && <div className={`bar ${sc}`} style={{left, width: bw}}><div className="progress" style={{width:`${progressOf(doc)}%`}} /><span className={`st-ico ${sc==='golive'?'done':sc}`} /><span className="label">{n.name}</span></div>}
+                    {n.actualStartDate && n.actualEndDate && <div className="actual" style={{left: daysBetween(dates.start, new Date(`${n.actualStartDate}T00:00:00Z`))*pxPerDay, width: Math.max(3, daysBetween(new Date(`${n.actualStartDate}T00:00:00Z`), new Date(`${n.actualEndDate}T00:00:00Z`))*pxPerDay)}} />}
+                  </div></div>
                 </div>
               );
             })}
             {visible.length===0 && <div className="empty-state"><span>No tasks match the filter.</span></div>}
           </div>
         </div>
-        <div className="gantt-canvas" ref={canvasRef} onScroll={syncFrom('canvas')}>
-          {!hasDates ? (
-            <div className="empty-state" style={{margin:24}}>
-              <strong>No timeline yet</strong>
-              <span>None of the visible tasks have Start / End dates. Click a row to set dates in the side panel, or re-import a file that includes dates.</span>
-            </div>
-          ) : (
-            <>
-              <div className="gantt-time-header" style={{width: timelineWidth}}>
-                <div className="time-row months">{renderMonthSpans(dates.start, totalDays, pxPerDay)}</div>
-                <div className="time-row days">{renderDayTicks(dates.start, totalDays, pxPerDay, zoom)}</div>
-              </div>
-              <div className="gantt-rows" style={{width: timelineWidth}}>
-                {visible.map(n => {
-                  const ds = n.rollupStartDate || n.startDate;
-                  const de = n.rollupEndDate || n.endDate || ds;
-                  if (!ds) return <div key={n.id} className={`task-row canvas ${selectedTask===n.id?'selected':''}`} />;
-                  const s = new Date(`${ds}T00:00:00Z`);
-                  const e = new Date(`${de}T00:00:00Z`);
-                  const left = daysBetween(dates.start, s) * pxPerDay;
-                  const width = Math.max(3, (daysBetween(s, e)+1) * pxPerDay);
-                  const isGroup = n.taskType === 'group';
-                  let bg = isGroup ? (styleCfg.colors?.group || '#0f172a') : (styleCfg.colors?.leaf || '#2563eb');
-                  if (!isGroup && styleCfg.status_field && styleCfg.colors_by_status) {
-                    const sv = fieldsOf(docById[n.id])[styleCfg.status_field];
-                    const c = sv != null ? styleCfg.colors_by_status[String(sv)] : undefined;
-                    if (c) bg = c;
-                  }
-                  return (
-                    <div key={n.id} className={`task-row canvas ${selectedTask===n.id?'selected':''}`} onClick={()=>setSelectedTask(n.id)}>
-                      <div className="bar" style={{ left, width, background: bg, opacity: isGroup?0.6:1 }}>
-                        <strong>{n.name}</strong>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </>
-          )}
-        </div>
+        <aside className="panel">
+          {selectedNode ? <TaskPanel task={selectedNode} doc={selectedDoc} displayColumns={displayColumns} allTasks={tasks} onClose={()=>setSelectedTask(null)} onSaved={()=>{ if (name) reload(name); }} /> : <div className="panel-empty"><h2 className="panel-title">No task selected</h2><p>Pick a row to edit schedule, status, owner, and hierarchy. Bars are read-only.</p></div>}
+        </aside>
       </div>
-      {styleCfg.footer && <div className="footer-text">{styleCfg.footer}</div>}
-      {selectedTask && (
-        <TaskPanel
-          task={nodes.find(n=>n.id===selectedTask)!}
-          doc={docById[selectedTask]}
-          displayColumns={displayColumns}
-          allTasks={tasks}
-          onClose={()=>setSelectedTask(null)}
-          onSaved={()=>{ if (name) reload(name); }}
-        />
-      )}
+      <div className="statusbar"><div className="item"><span className="led"></span>Synced</div><div className="item">{gantt.name}</div><div className="item">{tasks.length} tasks · {tasks.filter(t=>t.kind==='group').length} groups</div><div className="grow"></div><div className="item">Today · <span>{new Date().toISOString().slice(0,10)}</span></div><div className="item">Px / day · {pxPerDayText}</div></div>
       {newTaskOpen && gantt && (
         <NewTaskPanel
           gantt={gantt.name}
@@ -947,6 +978,94 @@ function GanttEditorScreen({ name, onBack }: { name: string | null; onBack: () =
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function SchemaFieldMap({ fieldMap, columns, onChange }: { fieldMap: Record<string,string>; columns: string[]; onChange: (key:string, col:string)=>void }) {
+  return (
+    <div className="schema-panel">
+      <strong>Stamped field map</strong>
+      <p>Edits affect the next re-import only. Existing rows stay as-is until re-import replaces tasks.</p>
+      {['name','start_date','end_date','actual_start','actual_end'].map(k => (
+        <label key={k}>{k}
+          <select value={fieldMap[k] || ''} onChange={e=>onChange(k, e.target.value)}>
+            <option value="">none</option>{columns.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+        </label>
+      ))}
+    </div>
+  );
+}
+
+function SchemaGrouping({ grouping, columns, fieldMap, onApply }: { grouping: string[]; columns: string[]; fieldMap: Record<string,string>; onApply: (cols:string[])=>void }) {
+  const [draft, setDraft] = useState(grouping);
+  useEffect(() => setDraft(grouping), [grouping.join('|')]);
+  const nameCol = fieldMap.name;
+  const nameColIndex = nameCol ? draft.indexOf(nameCol) : -1;
+  const taskLevelCandidate = nameColIndex >= 0 && draft.length > nameColIndex + 1 ? draft[draft.length - 1] : '';
+  return (
+    <div className="schema-panel">
+      <strong>Group bands</strong>
+      <p>Saving regenerates persisted group rows from current leaves and preserves leaf edits.</p>
+      {taskLevelCandidate && (
+        <div className="schema-warning">
+          {taskLevelCandidate} looks like the dated task level. Saving will use it as the row label and keep grouping at {draft.slice(0, -1).join(' → ')}.
+        </div>
+      )}
+      <div className="schema-chip-list">
+        {draft.map((g,i)=><span key={`${g}-${i}`} className="chip">{g}<button onClick={()=>setDraft(draft.filter((_,idx)=>idx!==i))}>×</button></span>)}
+        {!draft.length && <span className="dim">No grouping columns</span>}
+      </div>
+      <select value="" onChange={e=>{ if(e.target.value) setDraft([...draft, e.target.value]); }}>
+        <option value="">add column</option>{columns.filter(c=>!draft.includes(c)).map(c=><option key={c}>{c}</option>)}
+      </select>
+      <button className="btn primary sm" onClick={()=>onApply(draft)}>Save grouping</button>
+    </div>
+  );
+}
+
+function SchemaColumns({ columns, selected, onToggle }: { columns: string[]; selected: string[]; onToggle: (col:string)=>void }) {
+  return (
+    <div className="schema-panel">
+      <strong>Visible columns</strong>
+      <p>Checked fields appear in the side panel and export snapshot metadata.</p>
+      <div className="schema-checks">
+        {columns.map(c => <label key={c}><input type="checkbox" checked={selected.includes(c)} onChange={()=>onToggle(c)} />{c}</label>)}
+      </div>
+    </div>
+  );
+}
+
+function GroupBand({ node, allNodes, collapsed, onToggle, left, width, gridCols }: { node: TaskNode; allNodes: TaskNode[]; collapsed: boolean; onToggle: ()=>void; left: number; width: number; gridCols: string }) {
+  const descendants = allNodes.filter(n => {
+    let p = n.parentId;
+    const byId = new Map(allNodes.map(x => [x.id, x]));
+    while (p) {
+      if (p === node.id) return true;
+      p = byId.get(p)?.parentId || null;
+    }
+    return false;
+  });
+  const leaves = descendants.filter(n => n.taskType !== 'group');
+  const counts = leaves.reduce<Record<string, number>>((acc, n) => {
+    const cls = statusClass(n.rollupStatus || n.status);
+    acc[cls] = (acc[cls] || 0) + 1;
+    return acc;
+  }, {});
+  const total = Math.max(1, leaves.length);
+  return (
+    <div className={`band depth-${Math.min(node.depth, 2)}`} style={{gridTemplateColumns: gridCols}} onClick={onToggle}>
+      <div className="gutter"><div className="depth-rule" /></div>
+      <div className="band-label">
+        <button className={`caret-btn ${collapsed?'closed':''}`} onClick={(e)=>{e.stopPropagation(); onToggle();}}>⌄</button>
+        <span className="label-text">{node.name}</span>
+        <span className="label-meta"><span>{leaves.length} tasks</span><span className="dot" /><span>{durationDays(node)}d</span></span>
+      </div>
+      <div className="band-canvas"><div className="dist" style={{left, width: Math.max(12, width)}}>
+        {STATUS_ORDER.filter(s=>counts[s]).map(s => <span key={s} className={`seg-${statusClass(s)}`} style={{width:`${(counts[s]/total)*100}%`}} />)}
+        {!leaves.length && <span className="seg-empty" />}
+      </div></div>
     </div>
   );
 }
@@ -1042,7 +1161,7 @@ function TaskPanel({ task, doc, displayColumns, allTasks, onClose, onSaved }: { 
   const fieldKeys = Array.from(new Set([...displayColumns, ...Object.keys(fields)]));
   const parentOptions = allTasks.filter(t => t.kind === 'group' && t.name !== doc?.name);
   return (
-    <div className="side-panel">
+    <div className="inspector-panel">
       <div className="side-panel-head"><h3>Edit task</h3><button className="btn btn-ghost" onClick={onClose}>Close</button></div>
       <div className="form"><label>Name<input value={name} onChange={e=>setName(e.target.value)} /></label></div>
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
