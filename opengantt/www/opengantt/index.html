@@ -8,6 +8,10 @@
 </head>
 <body>
 <div id="root"></div>
+<script>
+window.csrf_token = "{{ csrf_token }}";
+window.frappe_user = "{{ user }}";
+</script>
 <script src="/assets/opengantt/opengantt/main.js"></script>
 </body>
 </html>
