@@ -1,9 +1,8 @@
 import frappe
 
 
-def has_app_permission(user=None):
-    if not user:
-        user = frappe.session.user
-    if user == "Guest":
-        return False
-    return True
+def has_app_permission():
+    if frappe.session.user == "Administrator":
+        return True
+
+    return "OpenGantt User" in frappe.get_roles()

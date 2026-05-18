@@ -1,8 +1,9 @@
-import frappe
-from frappe.model.document import Document
 import json
 
-class OGShare(Document):
+from frappe.website.website_generator import WebsiteGenerator
+
+
+class OGShare(WebsiteGenerator):
     def get_context(self, context):
         context.no_cache = 1
         try:
