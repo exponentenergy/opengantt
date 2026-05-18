@@ -527,6 +527,7 @@ function GanttEditorScreen({ name, onBack }: { name: string | null; onBack: () =
   const [styles, setStyles] = useState<StyleDoc[]>([]);
   const [selStyle, setSelStyle] = useState('');
   const [selectedTask, setSelectedTask] = useState<string | null>(null);
+  const [newTaskOpen, setNewTaskOpen] = useState<{ parent: string | null } | null>(null);
   const [zoom, setZoom] = useState<'day'|'week'|'month'|'quarter'>('month');
   const [filter, setFilter] = useState('');
   const [groupBy, setGroupBy] = useState<string>('__stored__');
@@ -681,6 +682,7 @@ function GanttEditorScreen({ name, onBack }: { name: string | null; onBack: () =
             {styles.map(s=><option key={s.name} value={s.name}>{s.name}</option>)}
           </select>
         </label>
+        <button className="btn btn-primary" onClick={()=>setNewTaskOpen({parent: null})}>+ New Task</button>
         <button className="btn btn-ghost" onClick={share}>Share</button>
         <button className="btn btn-ghost" onClick={exportHtml}>Export HTML</button>
         <button className="btn btn-ghost" onClick={reimport}>Re-import</button>
@@ -771,8 +773,19 @@ function GanttEditorScreen({ name, onBack }: { name: string | null; onBack: () =
           task={nodes.find(n=>n.id===selectedTask)!}
           doc={docById[selectedTask]}
           displayColumns={displayColumns}
+          allTasks={tasks}
           onClose={()=>setSelectedTask(null)}
           onSaved={()=>{ if (name) reload(name); }}
+        />
+      )}
+      {newTaskOpen && gantt && (
+        <NewTaskPanel
+          gantt={gantt.name}
+          allTasks={tasks}
+          defaultParent={newTaskOpen.parent}
+          displayColumns={displayColumns}
+          onClose={()=>setNewTaskOpen(null)}
+          onCreated={()=>{ setNewTaskOpen(null); if (name) reload(name); }}
         />
       )}
       {showShare && (
@@ -836,13 +849,17 @@ function renderDayTicks(start: Date, totalDays: number, pxPerDay: number, zoom: 
   return out;
 }
 
-function TaskPanel({ task, doc, displayColumns, onClose, onSaved }: { task: TaskNode; doc: TaskDoc | undefined; displayColumns: string[]; onClose: () => void; onSaved: () => void }) {
+function TaskPanel({ task, doc, displayColumns, allTasks, onClose, onSaved }: { task: TaskNode; doc: TaskDoc | undefined; displayColumns: string[]; allTasks: TaskDoc[]; onClose: () => void; onSaved: () => void }) {
   const [name, setName] = useState(task.name);
+  const [kind, setKind] = useState<'group'|'leaf'>(doc?.kind || 'leaf');
+  const [parent, setParent] = useState(doc?.parent_task || '');
   const [start, setStart] = useState((doc?.start_date||'').slice(0,10));
   const [end, setEnd] = useState((doc?.end_date||'').slice(0,10));
   const [fields, setFields] = useState<Record<string,any>>(() => fieldsOf(doc));
   useEffect(() => {
     setName(task.name);
+    setKind(doc?.kind || 'leaf');
+    setParent(doc?.parent_task || '');
     setStart((doc?.start_date||'').slice(0,10));
     setEnd((doc?.end_date||'').slice(0,10));
     setFields(fieldsOf(doc));
@@ -851,31 +868,144 @@ function TaskPanel({ task, doc, displayColumns, onClose, onSaved }: { task: Task
     if (!doc) return;
     try {
       await frappeApi.update('OG Task', {
-        name: doc.name, task_name: name,
-        start_date: start || null, end_date: end || null,
+        name: doc.name,
+        task_name: name,
+        kind,
+        parent_task: parent || null,
+        start_date: kind === 'group' ? null : (start || null),
+        end_date: kind === 'group' ? null : (end || null),
         fields: JSON.stringify(fields),
       });
       toast(`Task "${name}" saved`);
     } catch (e:any) { toast(e?.message || 'Save failed', 'error'); return; }
     onSaved(); onClose();
   };
+  const del = async () => {
+    if (!doc) return;
+    if (!confirm(`Delete task "${name}" and all its children?`)) return;
+    try {
+      // delete descendants first to avoid orphan-FK lookups
+      const toDelete = collectDescendants(doc.name, allTasks);
+      for (const id of toDelete) await frappeApi.delete('OG Task', id);
+      await frappeApi.delete('OG Task', doc.name);
+      toast(`Deleted "${name}"${toDelete.length?` + ${toDelete.length} children`:''}`);
+    } catch (e:any) { toast(e?.message || 'Delete failed', 'error'); return; }
+    onSaved(); onClose();
+  };
   // Show every display_column even if absent from fields, so user can add values
   const fieldKeys = Array.from(new Set([...displayColumns, ...Object.keys(fields)]));
+  const parentOptions = allTasks.filter(t => t.kind === 'group' && t.name !== doc?.name);
   return (
     <div className="side-panel">
       <div className="side-panel-head"><h3>Edit task</h3><button className="btn btn-ghost" onClick={onClose}>Close</button></div>
       <div className="form"><label>Name<input value={name} onChange={e=>setName(e.target.value)} /></label></div>
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
-        <div className="form"><label>Start<input type="date" value={start} onChange={e=>setStart(e.target.value)} /></label></div>
-        <div className="form"><label>End<input type="date" value={end} onChange={e=>setEnd(e.target.value)} /></label></div>
+        <div className="form"><label>Kind
+          <select value={kind} onChange={e=>setKind(e.target.value as any)}>
+            <option value="leaf">Leaf (has dates)</option>
+            <option value="group">Group (rolls up children)</option>
+          </select>
+        </label></div>
+        <div className="form"><label>Parent
+          <select value={parent} onChange={e=>setParent(e.target.value)}>
+            <option value="">— root —</option>
+            {parentOptions.map(p => <option key={p.name} value={p.name}>{p.task_name}</option>)}
+          </select>
+        </label></div>
       </div>
+      {kind === 'leaf' && (
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+          <div className="form"><label>Start<input type="date" value={start} onChange={e=>setStart(e.target.value)} /></label></div>
+          <div className="form"><label>End<input type="date" value={end} onChange={e=>setEnd(e.target.value)} /></label></div>
+        </div>
+      )}
       {fieldKeys.map(k => (
         <div key={k} className="form"><label>{k}<input value={fields[k] ?? ''} onChange={e=>setFields({...fields,[k]:e.target.value})} /></label></div>
       ))}
       {!doc && <div style={{color:'var(--text-muted)',fontSize:12}}>Generated group — not persisted. Edit underlying leaves to change.</div>}
+      <div style={{marginTop:'auto',display:'flex',gap:8,justifyContent:'space-between'}}>
+        <button className="btn btn-danger" onClick={del} disabled={!doc}>Delete</button>
+        <div style={{display:'flex',gap:8}}>
+          <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+          <button className="btn btn-primary" onClick={save} disabled={!doc}>Save</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function collectDescendants(rootId: string, all: TaskDoc[]): string[] {
+  const byParent = new Map<string, TaskDoc[]>();
+  for (const t of all) {
+    if (!t.parent_task) continue;
+    const arr = byParent.get(t.parent_task) || [];
+    arr.push(t);
+    byParent.set(t.parent_task, arr);
+  }
+  const out: string[] = [];
+  function walk(id: string) {
+    for (const c of (byParent.get(id) || [])) { out.push(c.name); walk(c.name); }
+  }
+  walk(rootId);
+  return out;
+}
+
+function NewTaskPanel({ gantt, allTasks, defaultParent, displayColumns, onClose, onCreated }: { gantt: string; allTasks: TaskDoc[]; defaultParent: string | null; displayColumns: string[]; onClose: () => void; onCreated: () => void }) {
+  const [name, setName] = useState('');
+  const [kind, setKind] = useState<'group'|'leaf'>('leaf');
+  const [parent, setParent] = useState(defaultParent || '');
+  const [start, setStart] = useState('');
+  const [end, setEnd] = useState('');
+  const [fields, setFields] = useState<Record<string,any>>({});
+  const parentOptions = allTasks.filter(t => t.kind === 'group');
+  const sortBase = allTasks.length ? Math.max(...allTasks.map(t => t.sort_order || 0)) + 1 : 0;
+  const create = async () => {
+    if (!name.trim()) { toast('Task name is required', 'error'); return; }
+    try {
+      await frappeApi.create('OG Task', {
+        gantt,
+        task_name: name,
+        kind,
+        parent_task: parent || null,
+        start_date: kind === 'group' ? null : (start || null),
+        end_date: kind === 'group' ? null : (end || null),
+        sort_order: sortBase,
+        fields: JSON.stringify(fields),
+      });
+      toast(`Task "${name}" created`);
+    } catch (e:any) { toast(e?.message || 'Failed to create task', 'error'); return; }
+    onCreated();
+  };
+  return (
+    <div className="side-panel">
+      <div className="side-panel-head"><h3>New task</h3><button className="btn btn-ghost" onClick={onClose}>Close</button></div>
+      <div className="form"><label>Name<input value={name} onChange={e=>setName(e.target.value)} autoFocus placeholder="e.g. Kickoff meeting" /></label></div>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+        <div className="form"><label>Kind
+          <select value={kind} onChange={e=>setKind(e.target.value as any)}>
+            <option value="leaf">Leaf (has dates)</option>
+            <option value="group">Group (rolls up children)</option>
+          </select>
+        </label></div>
+        <div className="form"><label>Parent
+          <select value={parent} onChange={e=>setParent(e.target.value)}>
+            <option value="">— root —</option>
+            {parentOptions.map(p => <option key={p.name} value={p.name}>{p.task_name}</option>)}
+          </select>
+        </label></div>
+      </div>
+      {kind === 'leaf' && (
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+          <div className="form"><label>Start<input type="date" value={start} onChange={e=>setStart(e.target.value)} /></label></div>
+          <div className="form"><label>End<input type="date" value={end} onChange={e=>setEnd(e.target.value)} /></label></div>
+        </div>
+      )}
+      {displayColumns.map(k => (
+        <div key={k} className="form"><label>{k}<input value={fields[k] ?? ''} onChange={e=>setFields({...fields,[k]:e.target.value})} /></label></div>
+      ))}
       <div style={{marginTop:'auto',display:'flex',gap:8,justifyContent:'flex-end'}}>
         <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
-        <button className="btn btn-primary" onClick={save} disabled={!doc}>Save</button>
+        <button className="btn btn-primary" onClick={create}>Create task</button>
       </div>
     </div>
   );
