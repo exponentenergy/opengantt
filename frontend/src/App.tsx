@@ -38,6 +38,33 @@ function fieldsOf(t: TaskDoc | undefined): Record<string, any> {
   if (!t || !t.fields) return {};
   try { return JSON.parse(t.fields); } catch { return {}; }
 }
+function sortBySortOrder(a: TaskDoc, b: TaskDoc) {
+  return (a.sort_order ?? 0) - (b.sort_order ?? 0);
+}
+
+/* ---------- Toast (module-level emitter, no provider) ---------- */
+type ToastKind = 'success' | 'error' | 'info';
+let _toastEmit: ((msg: string, kind?: ToastKind) => void) | null = null;
+export function toast(msg: string, kind: ToastKind = 'success') { _toastEmit?.(msg, kind); }
+
+function ToastHost() {
+  const [items, setItems] = useState<Array<{id:number; msg:string; kind:ToastKind}>>([]);
+  useEffect(() => {
+    let n = 0;
+    _toastEmit = (msg, kind = 'success') => {
+      const id = ++n;
+      setItems(curr => [...curr, { id, msg, kind }]);
+      setTimeout(() => setItems(curr => curr.filter(t => t.id !== id)), 2800);
+    };
+    return () => { _toastEmit = null; };
+  }, []);
+  if (!items.length) return null;
+  return (
+    <div className="toast-host">
+      {items.map(t => <div key={t.id} className={`toast toast-${t.kind}`}>{t.msg}</div>)}
+    </div>
+  );
+}
 
 export default function App() {
   // Share-mode: server-rendered template injects window.__OG_SHARE_SNAPSHOT__
@@ -45,10 +72,41 @@ export default function App() {
   if (shareSnapshot) return <SharePage snapshot={shareSnapshot} />;
 
   const [user, setUser] = useState<string | null>(null);
-  const [screen, setScreen] = useState<Screen>('templates');
-  const [editTemplate, setEditTemplate] = useState<string | null>(null);
-  const [openGantt, setOpenGantt] = useState<string | null>(null);
+  // Initial nav state may come from window.history (browser back/forward into the SPA)
+  const initial = (typeof history !== 'undefined' && history.state && history.state.__og)
+    ? history.state.__og as { screen: Screen; editTemplate: string | null; openGantt: string | null }
+    : { screen: 'templates' as Screen, editTemplate: null, openGantt: null };
+  const [screen, setScreen] = useState<Screen>(initial.screen);
+  const [editTemplate, setEditTemplate] = useState<string | null>(initial.editTemplate);
+  const [openGantt, setOpenGantt] = useState<string | null>(initial.openGantt);
+
   useEffect(() => { frappeApi.getUser().then((r: any) => setUser(r.message)).catch(()=>setUser('Guest')); }, []);
+
+  // History: push on screen change, restore on back/forward
+  useEffect(() => {
+    history.replaceState({ __og: { screen, editTemplate, openGantt } }, '');
+  }, []); // run once to seed current entry
+  useEffect(() => {
+    const state = { __og: { screen, editTemplate, openGantt } };
+    // Skip pushing the very first render (replaceState handled it)
+    if (history.state && history.state.__og &&
+        history.state.__og.screen === screen &&
+        history.state.__og.editTemplate === editTemplate &&
+        history.state.__og.openGantt === openGantt) return;
+    history.pushState(state, '');
+  }, [screen, editTemplate, openGantt]);
+  useEffect(() => {
+    const onPop = (e: PopStateEvent) => {
+      if (e.state && e.state.__og) {
+        setScreen(e.state.__og.screen);
+        setEditTemplate(e.state.__og.editTemplate);
+        setOpenGantt(e.state.__og.openGantt);
+      }
+    };
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, []);
+
   if (!user) return <div className="empty-state" style={{ height: '100vh' }}><strong>OpenGantt</strong><span>Loading...</span></div>;
 
   return (
@@ -68,6 +126,7 @@ export default function App() {
         {screen==='ganttEditor' && <GanttEditorScreen name={openGantt} onBack={()=>setScreen('gantts')} />}
         {screen==='settings' && <SettingsScreen user={user} />}
       </div>
+      <ToastHost />
     </div>
   );
 }
@@ -79,7 +138,12 @@ function TemplatesScreen({ onEdit }: { onEdit: (n: string) => void }) {
   const [loading, setLoading] = useState(true);
   const refresh = () => { setLoading(true); frappeApi.list('OG Template').then((r: any) => { setItems(r || []); setLoading(false); }); };
   useEffect(() => { refresh(); }, []);
-  const create = async () => { if (!newName.trim()) return; await frappeApi.create('OG Template', { name: newName }); setNewName(''); setShowNew(false); refresh(); };
+  const create = async () => {
+    if (!newName.trim()) return;
+    try { await frappeApi.create('OG Template', { name: newName }); toast(`Template "${newName}" created`); }
+    catch (e: any) { toast(e?.message || 'Failed to create template', 'error'); return; }
+    setNewName(''); setShowNew(false); refresh();
+  };
   return (
     <div className="page">
       <div className="page-head"><div><h1>My Templates</h1><p>Describe the shape of your input files so they parse into Gantts.</p></div><button className="btn btn-primary" onClick={()=>setShowNew(true)}>New Template</button></div>
@@ -97,7 +161,11 @@ function TemplatesScreen({ onEdit }: { onEdit: (n: string) => void }) {
               <div><strong>{t.name}</strong><span>{t.description || 'No description'}</span></div>
               <div style={{display:'flex',gap:8}}>
                 <button className="btn btn-ghost" onClick={()=>onEdit(t.name)}>Edit</button>
-                <button className="btn btn-danger" onClick={async ()=>{ if(!confirm(`Delete template "${t.name}"?`)) return; await frappeApi.delete('OG Template', t.name); refresh();}}>Delete</button>
+                <button className="btn btn-danger" onClick={async ()=>{
+                  if(!confirm(`Delete template "${t.name}"?`)) return;
+                  try { await frappeApi.delete('OG Template', t.name); toast(`Template "${t.name}" deleted`); refresh(); }
+                  catch(e:any){ toast(e?.message || 'Delete failed', 'error'); }
+                }}>Delete</button>
               </div>
             </div>
           ))}
@@ -138,12 +206,15 @@ function TemplateEditorScreen({ name, onBack }: { name: string | null; onBack: (
 
   const save = async () => {
     if (!doc) return;
-    await frappeApi.update('OG Template', {
-      name: doc.name,
-      field_map: JSON.stringify(fieldMap),
-      grouping: JSON.stringify(grouping),
-      display_columns: JSON.stringify(displayColumns),
-    });
+    try {
+      await frappeApi.update('OG Template', {
+        name: doc.name,
+        field_map: JSON.stringify(fieldMap),
+        grouping: JSON.stringify(grouping),
+        display_columns: JSON.stringify(displayColumns),
+      });
+      toast(`Template "${doc.name}" saved`);
+    } catch (e: any) { toast(e?.message || 'Save failed', 'error'); return; }
     onBack();
   };
   const onSample = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -164,7 +235,8 @@ function TemplateEditorScreen({ name, onBack }: { name: string | null; onBack: (
   };
   const deleteStyle = async (s: StyleDoc) => {
     if (!confirm(`Delete style "${s.name}"?`)) return;
-    await frappeApi.delete('OG Style', s.name);
+    try { await frappeApi.delete('OG Style', s.name); toast(`Style "${s.name}" deleted`); }
+    catch(e:any){ toast(e?.message || 'Delete failed', 'error'); return; }
     if (doc) reload(doc.name);
   };
   if (!doc) return <div className="page"><div className="empty-state">Loading…</div></div>;
@@ -271,11 +343,11 @@ function StyleEditorModal({ style, templateName, displayColumns, onClose, onSave
       colors_by_status: Object.keys(colorsByStatus).length ? colorsByStatus : undefined,
     };
     const body: any = { name, template: templateName, config: JSON.stringify(config) };
-    if (isNew) {
-      await frappeApi.create('OG Style', body);
-    } else {
-      await frappeApi.update('OG Style', body);
-    }
+    try {
+      if (isNew) await frappeApi.create('OG Style', body);
+      else await frappeApi.update('OG Style', body);
+      toast(`Style "${name}" saved`);
+    } catch(e:any){ toast(e?.message || 'Save failed', 'error'); return; }
     onSaved();
   };
   return (
@@ -363,8 +435,11 @@ function GanttsScreen({ onOpen }: { onOpen: (n: string) => void }) {
   };
   const saveGantt = async () => {
     if (!newName.trim() || !selTemplate || !preview) return;
-    const g = await frappeApi.create('OG Gantt', { name: newName, template: selTemplate, parsed_at: new Date().toISOString() });
-    await frappeApi.parseUpload({ gantt: g.name, tasks: preview });
+    try {
+      const g = await frappeApi.create('OG Gantt', { name: newName, template: selTemplate, parsed_at: new Date().toISOString() });
+      const r: any = await frappeApi.parseUpload({ gantt: g.name, tasks: preview });
+      toast(`Gantt "${newName}" created (${r?.message?.count ?? preview.length} tasks)`);
+    } catch (e: any) { toast(e?.message || 'Failed to create Gantt', 'error'); return; }
     setShowNew(false); setPreview(null); setNewName(''); setSelTemplate(''); refresh();
   };
   return (
@@ -399,7 +474,11 @@ function GanttsScreen({ onOpen }: { onOpen: (n: string) => void }) {
               <div><strong>{g.name}</strong><span>{g.template}{g.parsed_at?` · parsed ${new Date(g.parsed_at).toLocaleDateString()}`:''}</span></div>
               <div style={{display:'flex',gap:8}}>
                 <button className="btn btn-primary" onClick={()=>onOpen(g.name)}>Open</button>
-                <button className="btn btn-danger" onClick={async ()=>{ if(!confirm(`Delete Gantt "${g.name}" and all its tasks?`)) return; await frappeApi.delete('OG Gantt', g.name); refresh();}}>Delete</button>
+                <button className="btn btn-danger" onClick={async ()=>{
+                  if(!confirm(`Delete Gantt "${g.name}" and all its tasks?`)) return;
+                  try { await frappeApi.delete('OG Gantt', g.name); toast(`Gantt "${g.name}" deleted`); refresh(); }
+                  catch(e:any){ toast(e?.message || 'Delete failed', 'error'); }
+                }}>Delete</button>
               </div>
             </div>
           ))}
@@ -457,7 +536,7 @@ function GanttEditorScreen({ name, onBack }: { name: string | null; onBack: () =
   const [loading, setLoading] = useState(true);
   const reload = (n: string) => Promise.all([
     frappeApi.read('OG Gantt', n).then((r:any)=>setGantt(r)),
-    frappeApi.list('OG Task').then((r:any)=>setTasks((r||[]).filter((t:TaskDoc)=>t.gantt===n))),
+    frappeApi.list('OG Task').then((r:any)=>setTasks(((r||[]).filter((t:TaskDoc)=>t.gantt===n)).sort(sortBySortOrder))),
   ]).then(()=>setLoading(false));
   useEffect(() => { if (name) { setLoading(true); reload(name); } }, [name]);
   useEffect(() => {
@@ -538,9 +617,13 @@ function GanttEditorScreen({ name, onBack }: { name: string | null; onBack: () =
   const share = async () => {
     if (!gantt) return;
     const snapshot = { tasks, template, style: styleCfg, displayColumns };
-    const r = await frappeApi.publishShare({ gantt: gantt.name, snapshot });
-    setShareUrl(window.location.origin + r.url);
-    setShowShare(true);
+    try {
+      const r: any = await frappeApi.publishShare({ gantt: gantt.name, snapshot });
+      const url = r?.message?.url || r?.url;
+      setShareUrl(window.location.origin + url);
+      setShowShare(true);
+      toast('Share link created');
+    } catch (e:any) { toast(e?.message || 'Share failed', 'error'); }
   };
   const exportHtml = () => {
     if (!gantt) return;
@@ -554,15 +637,19 @@ function GanttEditorScreen({ name, onBack }: { name: string | null; onBack: () =
     if (!gantt) return;
     if (!confirm('Re-import will replace all tasks (any side-panel edits since last import will be lost). Continue?')) return;
     try {
-      await frappeApi.reimport({ gantt: gantt.name });
+      const r: any = await frappeApi.reimport({ gantt: gantt.name });
+      toast(`Re-imported ${r?.message?.count ?? ''} tasks`);
       if (name) reload(name);
     } catch (e: any) {
-      alert(e?.message || 'Re-import failed. Make sure the Gantt has a source_file attached.');
+      toast(e?.message || 'Re-import failed. Attach a source_file first.', 'error');
     }
   };
   const changeStyle = async (val: string) => {
     setSelStyle(val);
-    if (gantt) await frappeApi.update('OG Gantt', { name: gantt.name, active_style: val || null });
+    if (gantt) {
+      try { await frappeApi.update('OG Gantt', { name: gantt.name, active_style: val || null }); }
+      catch (e:any){ toast(e?.message || 'Failed to update style', 'error'); }
+    }
   };
 
   if (loading || !gantt) return <div className="page"><div className="empty-state">Loading Gantt…</div></div>;
@@ -762,11 +849,14 @@ function TaskPanel({ task, doc, displayColumns, onClose, onSaved }: { task: Task
   }, [task.id, doc]);
   const save = async () => {
     if (!doc) return;
-    await frappeApi.update('OG Task', {
-      name: doc.name, task_name: name,
-      start_date: start || null, end_date: end || null,
-      fields: JSON.stringify(fields),
-    });
+    try {
+      await frappeApi.update('OG Task', {
+        name: doc.name, task_name: name,
+        start_date: start || null, end_date: end || null,
+        fields: JSON.stringify(fields),
+      });
+      toast(`Task "${name}" saved`);
+    } catch (e:any) { toast(e?.message || 'Save failed', 'error'); return; }
     onSaved(); onClose();
   };
   // Show every display_column even if absent from fields, so user can add values

@@ -162,3 +162,11 @@ table.preview th, table.preview td { padding: 6px 8px; text-align: left; border-
 
 /* Share mode tweaks */
 .gantt-screen.share .gantt-toolbar { background: var(--surface); }
+
+/* ---------- Toast ---------- */
+.toast-host { position: fixed; bottom: 20px; right: 20px; display: flex; flex-direction: column; gap: 8px; z-index: 100; pointer-events: none; }
+.toast { background: var(--text); color: var(--surface); padding: 10px 14px; border-radius: var(--radius); box-shadow: var(--shadow-md); font-size: 13px; font-weight: 500; min-width: 180px; max-width: 360px; animation: toast-in 180ms ease-out; pointer-events: auto; }
+.toast-success { background: var(--green); }
+.toast-error { background: var(--red); }
+.toast-info { background: var(--text); }
+@keyframes toast-in { from { transform: translateY(8px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
