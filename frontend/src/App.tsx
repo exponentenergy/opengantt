@@ -231,9 +231,13 @@ function TemplatesScreen({ onEdit }: { onEdit: (n: string) => void }) {
               <div style={{display:'flex',gap:8}}>
                 <button className="btn btn-ghost" onClick={()=>onEdit(t.name)}>Edit</button>
                 <button className="btn btn-danger" onClick={async ()=>{
-                  if(!confirm(`Delete template "${t.name}"?`)) return;
-                  try { await frappeApi.delete('OG Template', t.name); toast(`Template "${t.name}" deleted`); refresh(); }
-                  catch(e:any){ toast(e?.message || 'Delete failed', 'error'); }
+                  if(!confirm(`Delete template "${t.name}"?\n\nThis also deletes every Gantt using this template, plus all of those Gantts' tasks, shares, and styles. This cannot be undone.`)) return;
+                  try {
+                    const r: any = await frappeApi.deleteTemplate(t.name);
+                    const n = r?.message?.deleted_gantts ?? 0;
+                    toast(`Template "${t.name}" deleted${n?` (+ ${n} Gantt${n>1?'s':''})`:''}`);
+                    refresh();
+                  } catch(e:any){ toast(e?.message || 'Delete failed', 'error'); }
                 }}>Delete</button>
               </div>
             </div>
@@ -588,8 +592,8 @@ function GanttsScreen({ onOpen }: { onOpen: (n: string) => void }) {
               <div style={{display:'flex',gap:8}}>
                 <button className="btn btn-primary" onClick={()=>onOpen(g.name)}>Open</button>
                 <button className="btn btn-danger" onClick={async ()=>{
-                  if(!confirm(`Delete Gantt "${g.name}" and all its tasks?`)) return;
-                  try { await frappeApi.delete('OG Gantt', g.name); toast(`Gantt "${g.name}" deleted`); refresh(); }
+                  if(!confirm(`Delete Gantt "${g.name}"?\n\nThis also removes its tasks and any public share links. This cannot be undone.`)) return;
+                  try { await frappeApi.deleteGantt(g.name); toast(`Gantt "${g.name}" deleted`); refresh(); }
                   catch(e:any){ toast(e?.message || 'Delete failed', 'error'); }
                 }}>Delete</button>
               </div>

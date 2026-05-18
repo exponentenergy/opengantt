@@ -7,6 +7,18 @@ function csrfHeaders(): Record<string, string> {
   return headers;
 }
 
+function stripHtml(s: string): string {
+  return s
+    .replace(/<a [^>]*>([^<]*)<\/a>/gi, '"$1"')   // turn anchors into quoted text
+    .replace(/<[^>]+>/g, '')                       // drop any other tags
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 async function parseError(res: Response): Promise<string> {
   try {
     const data = await res.clone().json();
@@ -14,13 +26,13 @@ async function parseError(res: Response): Promise<string> {
       try {
         const msgs = JSON.parse(data._server_messages);
         const first = JSON.parse(msgs[0]);
-        return first.message || first.title || `HTTP ${res.status}`;
+        return stripHtml(first.message || first.title || `HTTP ${res.status}`);
       } catch { /* fall through */ }
     }
-    if (data?.exception) return String(data.exception);
-    if (data?.message) return typeof data.message === "string" ? data.message : JSON.stringify(data.message);
+    if (data?.exception) return stripHtml(String(data.exception));
+    if (data?.message) return stripHtml(typeof data.message === "string" ? data.message : JSON.stringify(data.message));
   } catch { /* not JSON */ }
-  try { return (await res.clone().text()).slice(0, 200) || `HTTP ${res.status}`; } catch { return `HTTP ${res.status}`; }
+  try { return stripHtml((await res.clone().text()).slice(0, 200)) || `HTTP ${res.status}`; } catch { return `HTTP ${res.status}`; }
 }
 
 async function api(method: string, args?: any) {
@@ -87,4 +99,6 @@ export const frappeApi = {
   publishShare: (body: any) => api("opengantt.api.publish_share.publish_share", body),
   duplicateStyle: (body: any) => api("opengantt.api.duplicate_style.duplicate_style", body),
   reimport: (body: any) => api("opengantt.api.reimport.reimport", body),
+  deleteGantt: (name: string) => api("opengantt.api.cascade_delete.delete_gantt", { name }),
+  deleteTemplate: (name: string) => api("opengantt.api.cascade_delete.delete_template", { name }),
 };
