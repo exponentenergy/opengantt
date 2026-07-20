@@ -119,13 +119,21 @@ after_install = "opengantt.install.after_install"
 # -----------
 # Permissions evaluated in scripted ways
 
-# permission_query_conditions = {
-# 	"Event": "frappe.desk.doctype.event.event.get_permission_query_conditions",
-# }
-#
-# has_permission = {
-# 	"Event": "frappe.desk.doctype.event.event.has_permission",
-# }
+permission_query_conditions = {
+	"OG Gantt": "opengantt.api.permission.permission_query",
+	"OG Template": "opengantt.api.permission.permission_query",
+	"OG Task": "opengantt.api.permission.permission_query",
+	"OG Share": "opengantt.api.permission.permission_query",
+	"OG Style": "opengantt.api.permission.permission_query",
+}
+
+has_permission = {
+	"OG Gantt": "opengantt.api.permission.has_permission",
+	"OG Template": "opengantt.api.permission.has_permission",
+	"OG Task": "opengantt.api.permission.has_permission",
+	"OG Share": "opengantt.api.permission.has_permission",
+	"OG Style": "opengantt.api.permission.has_permission",
+}
 
 # DocType Class
 # ---------------

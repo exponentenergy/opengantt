@@ -1,51 +1,51 @@
 {
-  "actions": [],
-  "allow_rename": 1,
-  "autoname": "Prompt",
-  "creation": "2025-05-17 00:00:00.000000",
-  "doctype": "DocType",
-  "engine": "InnoDB",
-  "fields": [
-    {
-      "fieldname": "template",
-      "fieldtype": "Link",
-      "label": "Template",
-      "options": "OG Template",
-      "reqd": 1
-    },
-    {
-      "fieldname": "config",
-      "fieldtype": "Long Text",
-      "label": "Style Config",
-      "description": "JSON style configuration (colors, header, footer, font, canvas mode)"
-    }
-  ],
-  "index_web_pages_for_search": 1,
-  "links": [],
-  "modified": "2025-05-17 00:00:00.000000",
-  "modified_by": "Administrator",
-  "module": "OpenGantt",
-  "name": "OG Style",
-  "naming_rule": "Set by user",
-  "owner": "Administrator",
-  "permissions": [
-    {
-      "role": "System Manager",
-      "read": 1,
-      "write": 1,
-      "create": 1,
-      "delete": 1
-    },
-    {
-      "role": "OpenGantt User",
-      "read": 1,
-      "write": 1,
-      "create": 1,
-      "delete": 1
-    }
-  ],
-  "sort_field": "modified",
-  "sort_order": "DESC",
-  "states": [],
-  "track_changes": 1
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "Prompt",
+ "creation": "2025-05-17 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "fields": [
+  {
+   "fieldname": "template",
+   "fieldtype": "Link",
+   "label": "Template",
+   "options": "OG Template",
+   "reqd": 1
+  },
+  {
+   "fieldname": "config",
+   "fieldtype": "Long Text",
+   "label": "Style Config",
+   "description": "JSON style configuration (colors, header, footer, font, canvas mode)"
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2025-05-17 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "OpenGantt",
+ "name": "OG Style",
+ "naming_rule": "Set by user",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "role": "System Manager",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 1
+  },
+  {
+   "role": "OpenGantt User",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
 }

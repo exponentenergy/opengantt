@@ -3,12 +3,25 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
 <title>OpenGantt — Shared View</title>
+{% if not expired %}
 <link rel="stylesheet" href="/assets/opengantt/opengantt/main.css">
+{% endif %}
 </head>
 <body>
+{% if expired %}
+<div style="max-width:32rem;margin:6rem auto;padding:2rem;font-family:system-ui,sans-serif;text-align:center;color:#334155;">
+  <h1 style="font-size:1.5rem;margin-bottom:0.5rem;">This share link is no longer available</h1>
+  <p>The link has expired or was revoked by its owner. Ask them for a fresh link if you still need access.</p>
+</div>
+{% else %}
 <div id="root"></div>
-<script>window.__OG_SHARE_SNAPSHOT__ = {{ snapshot|tojson|safe }};</script>
+<script type="application/json" id="og-snapshot">{{ snapshot | tojson }}</script>
+<script>
+window.__OG_SHARE_SNAPSHOT__ = JSON.parse(document.getElementById("og-snapshot").textContent);
+</script>
 <script src="/assets/opengantt/opengantt/main.js"></script>
+{% endif %}
 </body>
 </html>
