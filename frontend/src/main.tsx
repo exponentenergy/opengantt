@@ -4,9 +4,11 @@ import { ToastViewport } from "@astryxdesign/core/Toast";
 import App from "./App";
 import { SharePage } from "./views/SharePage";
 import "./index.css";
+import { applyAppearance, loadAppearance } from "./lib/appearance";
 
-// Astryx theme scoping — the theme CSS is scoped to [data-astryx-theme].
-document.documentElement.setAttribute("data-astryx-theme", "stone");
+// Apply saved appearance (theme / mode / accent) before first paint so there
+// is no theme flash. Also runs on the public share page — viewer's own prefs.
+applyAppearance(loadAppearance());
 
 const root = document.getElementById("root");
 if (root) {

@@ -25,6 +25,12 @@ export interface GanttMeta {
   owner?: string;
 }
 
+export interface SparkSegment {
+  start: string; // YYYY-MM-DD
+  end: string;
+  color_value: string | null;
+}
+
 export interface GanttCard {
   name: string;
   title: string;
@@ -32,6 +38,8 @@ export interface GanttCard {
   modified: string;
   has_source: 0 | 1;
   shares: number;
+  /** Up to ~40 dated leaf segments for the card sparkline. */
+  spark: SparkSegment[];
 }
 
 export interface MatrixSegment {

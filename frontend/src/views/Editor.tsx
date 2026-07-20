@@ -17,6 +17,7 @@ import { GanttChart } from "../components/GanttChart";
 import { TaskPanel } from "../components/TaskPanel";
 import { ShareDialog } from "../components/ShareDialog";
 import { exportHtml } from "../lib/exportHtml";
+import { AppearanceButton } from "../components/AppearanceDialog";
 
 const ZOOM: Record<string, number> = { day: 28, week: 9, month: 2.8 };
 
@@ -176,6 +177,7 @@ export function Editor({ ganttName }: { ganttName: string }) {
               onClick={() => exportHtml(gantt.title)}
             />
             <Button label="Share" variant="primary" size="sm" onClick={() => setShareOpen(true)} />
+            <AppearanceButton />
           </HStack>
         </HStack>
 

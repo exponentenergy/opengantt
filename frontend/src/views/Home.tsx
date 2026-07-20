@@ -16,6 +16,8 @@ import { useToast } from "@astryxdesign/core/Toast";
 import { api } from "../lib/api";
 import type { GanttCard } from "../lib/types";
 import { navigate } from "../lib/router";
+import { Sparkline } from "../components/Sparkline";
+import { AppearanceButton } from "../components/AppearanceDialog";
 
 export function Home() {
   const [cards, setCards] = useState<GanttCard[] | null>(null);
@@ -53,19 +55,25 @@ export function Home() {
   return (
     <div className="og-page">
       <VStack gap={8}>
-        <HStack justify="between" vAlign="center">
+        <HStack justify="between" vAlign="center" wrap="wrap" gap={4}>
           <VStack gap={1}>
-            <Heading level={1}>OpenGantt</Heading>
+            <HStack gap={3} vAlign="center">
+              <span className="og-wordmark" aria-hidden="true" />
+              <Heading level={1}>OpenGantt</Heading>
+            </HStack>
             <Text type="supporting" color="secondary">
               Turn spreadsheets into living Gantt charts
             </Text>
           </VStack>
-          <Button
-            label="Import spreadsheet"
-            variant="primary"
-            size="lg"
-            onClick={() => navigate({ view: "import" })}
-          />
+          <HStack gap={3} vAlign="center">
+            <AppearanceButton />
+            <Button
+              label="Import spreadsheet"
+              variant="primary"
+              size="lg"
+              onClick={() => navigate({ view: "import" })}
+            />
+          </HStack>
         </HStack>
 
         {cards === null ? (
@@ -87,7 +95,8 @@ export function Home() {
         ) : (
           <div className="og-card-grid">
             {cards.map((g) => (
-              <ClickableCard key={g.name} label={g.title} onClick={() => navigate({ gantt: g.name })}>
+              <div key={g.name} className="og-card">
+              <ClickableCard label={g.title} onClick={() => navigate({ gantt: g.name })}>
                 <VStack gap={3}>
                   <HStack justify="between" vAlign="start" gap={2}>
                     <Text type="body" weight="bold" maxLines={1}>
@@ -130,18 +139,40 @@ export function Home() {
                       ]}
                     />
                   </HStack>
+                  <Sparkline segments={g.spark ?? []} />
                   <HStack gap={2} wrap="wrap">
-                    <Badge variant="neutral" label={`${g.task_count} tasks`} />
+                    <Badge variant="info" label={`${g.task_count} tasks`} />
                     {g.shares > 0 && <Badge variant="teal" label="Shared" />}
-                    {Boolean(g.has_source) && <Badge variant="blue" label="Source kept" />}
+                    {Boolean(g.has_source) && <Badge variant="success" label="Source kept" />}
                   </HStack>
                   <Text type="supporting" color="secondary">
                     Updated <Timestamp value={g.modified} format="relative" />
                   </Text>
                 </VStack>
               </ClickableCard>
+              </div>
             ))}
           </div>
+        )}
+
+        {cards !== null && cards.length > 0 && cards.length < 7 && (
+          <button
+            type="button"
+            className="og-drop-strip"
+            onClick={() => navigate({ view: "import" })}
+          >
+            <span className="og-drop-strip-icon" aria-hidden="true">
+              ⤓
+            </span>
+            <span>
+              <Text type="body" weight="semibold">
+                Drop another spreadsheet
+              </Text>
+              <Text type="supporting" color="secondary">
+                CSV, TSV or XLSX — row-per-task plans and timeline matrices both work.
+              </Text>
+            </span>
+          </button>
         )}
       </VStack>
 

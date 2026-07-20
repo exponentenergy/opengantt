@@ -31,7 +31,7 @@ const CANONICAL: Record<string, string> = {
   migration: "#3f9e63", // green
   "go-live": "#1f7a4d", // dark green
   "go live": "#1f7a4d",
-  sustenance: "#155e46", // deep green
+  sustenance: "#1e7d63", // deep green-teal (kept light enough for dark themes)
   "increment - bug": "#d66a6a", // rose
   "increment - feature": "#9d6bbf", // purple
   "increment - data import": "#d99a2b", // amber
